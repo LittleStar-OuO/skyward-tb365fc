@@ -51,8 +51,8 @@
 5. **`/sys/power/mem_sleep` 写入容错**：被拒时休眠线程按“被拒绝”处理，不退出。
 6. **属性追加策略**：原厂 `prop.default` 已两次定义 `ro.secure/ro.adb.secure/ro.debuggable`，本机 init 拒绝再次定义；新增配置项 `device.adb_root`（默认 true），本机设为 `false`，保留原厂值。
 7. **新设备配置** `devices/tb365fc.toml`：显示 1600×2560/320dpi、90Hz 不强制、`modules.sources=["vendor_boot"]`、挂载 `persist`、MTK EFS 备份项等。
-9. **MTP 绑定修复**：切到  时先解绑 UDC 并清掉 configfs 里 adb 占用的 ，再重新绑定双功能；返回 adb 时同样清理并重新绑定。xaga fork 原实现跳过  导致 MTP symlink 冲突。
-8. **调试/打包工具** `tools/` 与 `crates/skyward-pack/src/bin/ramdisk-x.rs`：用于检查/修改 vendor_boot ramdisk（非打包必需）。
+8. **MTP 绑定修复**：切到 `mtp,adb` 时先解绑 UDC 并清掉 configfs 里 adb 占用的 `f1`，再重新绑定双功能；返回 adb 时同样清理并重新绑定。xaga fork 原实现跳过 `none`，导致 MTP symlink 冲突而只有 ADB。
+9. **调试/打包工具** `tools/` 与 `crates/skyward-pack/src/bin/ramdisk-x.rs`：用于检查/修改 vendor_boot ramdisk（非打包必需）。
 
 ## 构建
 
@@ -77,6 +77,12 @@ target/release/skyward-pack recovery \
 ```
 
 `stock/vendor_boot.img` 为原厂 `TB365FC_ZUXOS_1.1.10.122` 刷机包中的 `vendor_boot.img`（整分区 64 MiB，末尾带 AVB footer）。产物应为 67,108,864 字节并以 `AVBf` 结尾。
+
+当前已验证镜像（显示/触摸/adb/MTP）：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `skyward-tb365fc-mtp2.img` | `b3b21b309eb129ff299cc564dcb98ce3c7561746360138c448acdc45e87f7234` |
 
 ## 刷入 / 回滚
 
@@ -103,7 +109,7 @@ fastboot flash vbmeta_a vbmeta_stock.img
 ## 已知问题
 
 - **recovery 内 adb shell 不可用**：adbd 设置 shell 子进程 SELinux 上下文失败（策略无 shell 域）。ADB 接口可见，但 `adb shell` 会触发 adbd 崩溃。可使用 Skyward 内置终端。
-- **MTP 未出现**：Windows 只看到 Android Composite ADB Interface；待排查 Skyward USB functionfs 时序。
+- **MTP 存储浏览需先解密 /data**：MTP 设备已能枚举；内部存储（/sdcard）在 /data 解密后才可浏览。
 - **adb root 被禁用**：本机 init 对重复/覆盖只读属性敏感，`adb_root = false` 保留原厂属性。
 - 未包含 /data 解密、WiFi、振动、双系统适配（见状态表）。
 - vendor_boot 的 vendor ramdisk 同时用于正常启动；本适配已使其不影响系统启动，但请保留原厂镜像以便回滚。

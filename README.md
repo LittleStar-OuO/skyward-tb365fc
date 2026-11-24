@@ -29,7 +29,7 @@
 | 安装（zip / 分区镜像） | × | 尚未验证 |
 | 备份 / 恢复 | × | 尚未验证 |
 | 双系统 | × | 尚未验证 |
-| MTP（连接电脑） | × | Windows 仅枚举到 ADB，MTP 未出现 |
+| MTP（连接电脑） | √ | Windows 枚举为 Lenovo Xiaoxin Pad 12.1 (2025)；浏览内部存储需先解密 /data |
 | recovery 内 `adb shell` | × | adbd 创建 shell 子进程失败（联想 recovery SELinux 缺 shell 域） |
 | recovery 内 adb root | × | 本机 init 拒绝追加 `ro.secure` 等属性（见下），配置 `adb_root = false` |
 | /data 解密（FBE） | × | 第二阶段：需配置 MTK TEE（teei_daemon + beanpod KeyMint 等） |
@@ -51,6 +51,7 @@
 5. **`/sys/power/mem_sleep` 写入容错**：被拒时休眠线程按“被拒绝”处理，不退出。
 6. **属性追加策略**：原厂 `prop.default` 已两次定义 `ro.secure/ro.adb.secure/ro.debuggable`，本机 init 拒绝再次定义；新增配置项 `device.adb_root`（默认 true），本机设为 `false`，保留原厂值。
 7. **新设备配置** `devices/tb365fc.toml`：显示 1600×2560/320dpi、90Hz 不强制、`modules.sources=["vendor_boot"]`、挂载 `persist`、MTK EFS 备份项等。
+9. **MTP 绑定修复**：切到  时先解绑 UDC 并清掉 configfs 里 adb 占用的 ，再重新绑定双功能；返回 adb 时同样清理并重新绑定。xaga fork 原实现跳过  导致 MTP symlink 冲突。
 8. **调试/打包工具** `tools/` 与 `crates/skyward-pack/src/bin/ramdisk-x.rs`：用于检查/修改 vendor_boot ramdisk（非打包必需）。
 
 ## 构建

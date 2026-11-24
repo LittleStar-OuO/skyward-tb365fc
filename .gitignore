@@ -1,0 +1,9 @@
+target/
+work/
+stock/
+out/
+*.img
+*.bin
+*.zip
+!tools/*.js
+!tools/*.sh

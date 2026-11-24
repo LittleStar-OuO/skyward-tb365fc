@@ -1,0 +1,53 @@
+[device]
+codename = "tb365fc"
+brand = "Lenovo"
+model = "Lenovo Xiaoxin Pad 12.1 (2025)"
+ab = true
+soc = { hans = "天玑 6400", hant = "天璣 6400", en = "Dimensity 6400" }
+os_version_prop = "ro.build.display.id"
+# Stock recovery rides in the vendor boot image: the partition table has no
+# recovery partition, and the vendor ramdisk carries /init, system/bin/recovery,
+# recovery.fstab and res/.
+recovery_partition = "vendor_boot"
+# The stock property file already carries ro.secure, ro.adb.secure and
+# ro.debuggable twice, and this init refuses them beside the stock values:
+# the recovery keeps the stock ones and takes no adb root of its own.
+adb_root = false
+# MediaTek's recovery init never starts the service directory; Skyward starts
+# it once, as xaga does.
+restart_service_directory = false
+
+[display]
+# The 12.1-inch 2560 x 1600 panel, natural portrait; density as the running
+# system reports it (wm density 320).
+width = 1600
+height = 2560
+density = 320
+diagonal = 12.1
+# MediaTek's display driver tears at its high modes; stay at the mode the
+# panel comes up in, as xaga does.
+fastest_refresh = false
+
+[modules]
+# init loads modules.load.recovery from the vendor_boot ramdisk before it
+# starts the recovery service: the Himax touchscreen driver (hxchipset), the
+# panel and the vibration motor are among them, so nothing extra is loaded
+# here.
+sources = ["vendor_boot"]
+load = []
+
+# The Himax HX83122B touchscreen reports ordinary multitouch, as far as
+# dumpsys input shows (himax-touchscreen, TOUCH_MT); nothing is written to it.
+
+[partitions]
+# The phone mounts persist at /mnt/vendor/persist; the sensors' calibration
+# is there.
+mounted = ["persist"]
+
+[backup]
+# MediaTek keeps the baseband's and the sensors' settings, with the phone's
+# own identity, in its own partitions.
+efs = ["nvdata", "nvcfg", "protect1", "protect2", "persist"]
+
+[wipe]
+logs = ["/data/vendor/mtklog", "/data/vendor/connsyslog"]

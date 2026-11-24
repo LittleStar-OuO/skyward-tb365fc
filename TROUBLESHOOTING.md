@@ -1,0 +1,138 @@
+# TB365FC 适配卡点排查指南
+
+记录本机（联想小新 Pad 12.1 2025，TB365FC，MT6835，ZUXOS 1.1.10.122）移植 Skyward 过程中遇到的每个卡点：现象、原因、解决、验证方式。持续更新。
+
+---
+
+## 1. 分区表没有 recovery 分区
+
+**现象**：官方包 `MT6835_Android_scatter.txt` 中没有 `recovery`；`vendor_boot.img` 里却有完整的恢复用户空间（`/init`、`system/bin/recovery`、`res/`、`recovery.fstab`）。
+
+**原因**：A/B + GKI 机型把 recovery 放进 vendor_boot 的 vendor ramdisk。
+
+**解决**：使用支持 `recovery_partition = "vendor_boot"` 的 xaga fork（BkaNeko/xaga-skyward）；用原厂 `vendor_boot.img` 作为 `skyward-pack recovery --stock` 输入，输出仍是 VNDRBOOT v4 镜像。
+
+**验证**：打包产物 64 MiB、末尾 `AVBf`、镜像内 ramdisk 含 Skyward；`fastboot flash vendor_boot_a` 后能进入。
+
+---
+
+## 2. 改过的 vendor_boot 与 AVB 不匹配
+
+**现象**：直接刷修改后的 vendor_boot 可能被 bootloader 拒绝，或系统不启动。
+
+**原因**：顶层 `vbmeta.img` 含 vendor_boot 的 hash 描述符；vendor_boot 自身也带未签名 vbmeta footer。
+
+**解决**：`fastboot --disable-verification flash vbmeta_a vbmeta.img` 关闭校验后再刷 vendor_boot。启动器会改写 vbmeta flags（本机 fastboot 输出 `Rewriting vbmeta struct at offset: 0`）。
+
+**注意**：保留原厂 `vendor_boot.img` / `vbmeta.img` 以便回滚；只操作槽 a。
+
+---
+
+## 3. 槽 b 出厂未写入
+
+**现象**：scatter 中 `boot_b`、`init_boot_b`、`vbmeta*_b` 的 `file_name: NONE`。
+
+**解决**：只用槽 a（`vendor_boot_a` / `vbmeta_a`），不要 `--set-active=b`。
+
+---
+
+## 4. 追加重复的只读属性导致无法启动
+
+**现象**：只要在 `prop.default` 里再写一份 `ro.secure` / `ro.adb.secure` / `ro.debuggable`，设备就卡在联想 logo/黑屏，无 adb。
+
+**原因**：原厂 `prop.default` 已两次定义这些键；本机 init 对重复的 `ro.*` 属性处理为致命。
+
+**解决**：
+- packer 写属性前先删除同名键（避免重复）；
+- 本机配置 `device.adb_root = false`，完全不追加 `ro.secure=0` 等，保留原厂值（adb 仍可用，但 recovery 内 `adb shell` 受限，见 9）。
+
+**验证**：属性测试镜像（只改 props）能正常进原厂 recovery。
+
+---
+
+## 5. `/skyward/run` 无法创建（rootfs 写被拒）
+
+**现象**：Skyward 启动即退出，日志：`Error: make /skyward/run — Permission denied`。
+
+**原因**：联想 recovery 的 SELinux 不允许 recovery 域在 rootfs 的 `/skyward` 下建目录。
+
+**解决**：运行目录改到 `/tmp/skyward`（`skyward-sys::RUN/LOG`、UI 日志/截图、WLAN、安装日志路径一并修改）。
+
+**验证**：启动后不再报该错误，USB/adb 能起来。
+
+---
+
+## 6. `/proc/meminfo` 等读取被拒导致 UI 不启动
+
+**现象**：日志 `Error: read /proc/meminfo — Permission denied`，UI 在首帧前退出，无 adb（此时 USB 尚未设置）。
+
+**原因**：联想 recovery 的 SELinux 策略禁止 recovery 域读取某些 proc/sysfs 文件。
+
+**解决**：`skyward-info` 的信息采集改为**容错降级**（读不到用空值），不再中断 UI；同类还有电池 sysfs 读取。
+
+**验证**：UI 正常显示，设备信息卡片部分字段为空。
+
+---
+
+## 7. uevent netlink socket 被拒
+
+**现象**：`Error: open the uevent socket — Permission denied`。
+
+**解决**：`skyward-sys::uevent::Listener` 在 socket 创建/绑定失败时降级为不监听事件（`socket: Option<OwnedFd>`），界面按自身时钟刷新。
+
+---
+
+## 8. `/sys/power/mem_sleep` 写入被拒
+
+**现象**：`Error: write s2idle to /sys/power/mem_sleep — Permission denied`。
+
+**解决**：休眠线程把该写入视为尽力而为，失败后按“休眠被拒绝”处理，不影响 UI。
+
+---
+
+## 9. recovery 内 `adb shell` 崩溃（已知限制）
+
+**现象**：`adb devices` 能看到 `recovery`，但 `adb shell` 触发 adbd 崩溃：`Could not set SELinux context for subprocess`。
+
+**原因**：本机 recovery 策略没有 shell 域/缺少上下文转换；`setexeccon` 失败使 adbd 中止。
+
+**现状**：MTP、Skyward 内置终端可用；`adb pull/push` 走 sync 服务不受影响。后续可研究补 SELinux 上下文或单次 `ro.secure=0` 的安全生效方式。
+
+---
+
+## 10. MTP 不枚举（只看到 ADB）
+
+**现象**：`sys.usb.state=mtp,adb`、`sys.usb.ffs.mtp.ready=1`，Windows 却只有 Android Composite ADB Interface。
+
+**原因**：xaga fork 的 `usb::switch` 为不重启 adbd，在 adb→mtp 时跳过 `none`；configfs 里 `f1` 仍被 adb 占用，MTP symlink 失败（EEXIST），最终只有 ADB 功能。
+
+**解决（两处）**：
+1. `mtp.rc`：进入 `mtp,adb` 时先 `write UDC ""` 解绑、`rm f1/f2`，再 symlink `ffs.mtp→f1`、`ffs.adb→f2`、写 UDC、置 state；返回 adb 时同样清理并重新绑定。补丁先保留 `f1/f2` 清理，再加回 symlink。
+2. `usb.rs`：恢复 fast-path（adb↔mtp 不经过 `none`），避免 adbd 在 stop/start 后不恢复（本机 `none→mtp` 时 adbd 会停留在 stopped，USB 全无）。
+
+**验证**：Windows 枚举出 `Lenovo Xiaoxin Pad 12.1 (2025)`（WPD/MTP，MI_00）与 ADB（MI_01）。
+
+---
+
+## 11. 调试与日志抓取手段（通用）
+
+- **pstore 裸分区日志**：调试版把 stdout/stderr 以 `O_SYNC` 重定向到 `/dev/block/by-name/pstore` 偏移 4096，崩溃后回系统 `adb root; dd if=/dev/block/by-name/pstore bs=1M count=4` 提取。内核正常重启不清该分区，最可靠。
+- **摄像头抓屏**：Iriun Webcam + ffmpeg（`-f dshow -i "video=Iriun Webcam"`）抓帧读 UI/终端内容，避免反复口述。
+- **Skyward 终端**：设置→终端可跑 `tail -n 40 /tmp/skyward/recovery.log`、`getprop`；但受 SELinux 限制读不了 configfs/persist。
+- **持久分区（persist）日志不可用**：recovery 域写 persist 被拒；系统侧 adbd 也因路径标签无法读取。
+
+---
+
+## 12. permissive 尝试无效（记录）
+
+**尝试**：在 `init.rc`/`init.recovery.*.rc` 里 `write /sys/fs/selinux/enforce 0`、vendor_boot cmdline 加 `androidboot.selinux=permissive`。**均未生效**（Skyward 启动时读 enforce 仍为 1）。
+
+**结论**：不依赖 permissive；改用容错/路径迁移解决各拒绝点。也尝试过去掉 `service recovery` 的 `seclabel`（以 init 域运行），Exec 被拒、无 adb，已回退。
+
+---
+
+## 待续（进行中）
+
+- **/data 解密**：已加入 teei_daemon / KeyMint 2.0(AIDL) / Gatekeeper(HIDL) / hwservicemanager / boot@1.2 服务与 TEE/RPMB 节点 owners，测试中。
+- **MTP 存储浏览**：MTP 已枚举；/sdcard 需解密 /data 后才可浏览。
+- **WiFi / 振动 / 在线更新 / 双系统**：未开始。

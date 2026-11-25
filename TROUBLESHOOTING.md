@@ -221,13 +221,13 @@
 **现象**：init 以原生 HAL 域启动 teei/keymint/gatekeeper 后，程序 SIGSEGV（signal 11）或退出 127/1。
 
 **原因**：
-- 不设 seclabel 时，init 自动进入原生域（、、），但这些域**无权 map/recovery 的 rootfs 版 **（avc: ）。
-- 设  时被 **entrypoint** 规则拒绝（）。
-- 安装系统的  是指向  的符号链接；recovery 未挂载 runtime apex（loop 设备被拒），因此没有带正确标签的 linker。
+- 不设 seclabel 时，init 自动进入原生域（`tee`、`hal_keymint_default`、`hwservicemanager`），但这些域**无权 map recovery 的 rootfs 版 `/system/bin/linker64`**（avc: `map ... rootfs`）。
+- 设 `seclabel u:r:recovery:s0` 时被 **entrypoint** 规则拒绝（`entrypoint ... tee_exec`）。
+- 安装系统的 `/system/bin/linker64` 是指向 `/apex/com.android.runtime/bin/linker64` 的符号链接；recovery 未挂载 runtime apex（loop 设备被拒），因此没有带正确标签的 linker。
 
 **可行的解决路径**：
-1. 在启动 HAL 前挂载  apex（需 loop 或以 init 域运行一个同步 helper），让原生域用带正确标签的 linker。
-2. 离线修补 ramdisk 的 （已定位到根目录 ，1.09 MB），对 /// 设 permissive 或补 rootfs/apex 访问规则。
+1. 在启动 HAL 前挂载 `com.android.runtime` apex（需 loop 或以 init 域运行一个同步 helper），让原生域用带正确标签的 linker。
+2. 离线修补 ramdisk 的 `sepolicy`（已定位到根目录 `sepolicy`，1.09 MB），对 `tee` / `hwservicemanager` / `hal_keymint_default` / `hal_gatekeeper_default` 设 permissive 或补 rootfs/apex 访问规则。
 
 ---
 

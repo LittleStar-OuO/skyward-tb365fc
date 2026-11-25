@@ -561,10 +561,23 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     // The recovery's init leaves the service directory stopped; the
     // phone's own programs register with it, and the directory has to be
     // told what they are before they start.
-    if crate::services::running("/system/bin/servicemanager").is_none() {
-        skyward_sys::set_prop("ctl.start", "servicemanager").context("start the service directory")?;
-        skyward_sys::wait_prop("init.svc.servicemanager", "running", std::time::Duration::from_secs(5))
-            .context("wait for the service directory")?;
+    // init starts it as it boots; where the recovery's policy keeps /proc's
+    // links shut, the state init keeps says the same. Only a directory that
+    // is truly not running is asked for.
+    let directory_runs = skyward_sys::prop("init.svc.servicemanager").as_deref() == Some("running")
+        || crate::services::running("/system/bin/servicemanager").is_some();
+    if !directory_runs {
+        // A recovery whose policy keeps it from writing ctl.start still gets
+        // the directory: it is the first of the phone's own programs the
+        // configuration names, and is started with them below.
+        match skyward_sys::set_prop("ctl.start", "servicemanager") {
+            Ok(()) => {
+                let _ = skyward_sys::wait_prop("init.svc.servicemanager", "running", std::time::Duration::from_secs(5));
+            }
+            Err(e) => {
+                let _ = skyward_sys::kmsg(&format!("the service directory is started with the phone's own programs: {e:#}"));
+            }
+        }
     }
     let nodes = skyward_sys::ueventd::apply()?;
     skyward_sys::kmsg(&format!("{nodes} device nodes given the owner their phone describes"))?;
@@ -581,13 +594,21 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     // The drivers ask for their firmware by name, and the kernel looks only
     // in folders of its own unless told to pass on what it does not find
     // there to ueventd, which looks in the recovery's firmware folders.
-    std::fs::write(FIRMWARE_FALLBACK, "1").with_context(|| format!("write 1 to {FIRMWARE_FALLBACK}"))?;
+    if let Err(e) = std::fs::write(FIRMWARE_FALLBACK, "1") {
+        // A recovery whose sysctl is shut still runs; the drivers that need
+        // firmware from the vendor partition say so when it is missing.
+        let _ = skyward_sys::kmsg(&format!("the firmware fallback stays as it is: {e}"));
+    }
     if let Some(firmware) = &cfg.firmware {
         mount_firmware(&firmware.partition)?;
     }
     for name in &cfg.partitions.mounted {
-        let at = skyward_block::fstab::mount(name)?;
-        skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?;
+        // A mount the recovery's policy keeps it from making is said and
+        // passed over; what needs it says so when it is missing.
+        match skyward_block::fstab::mount(name) {
+            Ok(at) => skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?,
+            Err(e) => skyward_sys::kmsg(&format!("{name} was not mounted: {e:#}"))?,
+        }
     }
     for path in load_modules(cfg, &cfg.modules.load)? {
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
@@ -608,7 +629,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     // What either service directory has to know of, it has to know before
     // anything registers with it, so both are told of the configuration's
     // programs and of those that use the phone's keys together.
-    let key_programs = found.as_deref().map(keys::programs).unwrap_or_default();
+    let key_programs = if cfg.device.keys_from_init { Vec::new() } else { found.as_deref().map(keys::programs).unwrap_or_default() };
     let programs = || services.iter().map(|p| &p.service).chain(&key_programs);
     let hardware: Vec<String> = programs().filter_map(|s| s.ready_hardware_service.clone()).collect();
     if !hardware.is_empty() {
@@ -646,7 +667,11 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     for line in keys::describe(&steps) {
         skyward_sys::kmsg(&format!("for the phone's keys: {}", line.replace("\n  ", ", ")))?;
     }
-    keys::start(&steps, &module_folders(cfg)?)?;
+    // Where init starts the key programs, its policy alone lets them run;
+    // starting them here as the recovery user cannot.
+    if !cfg.device.keys_from_init {
+        keys::start(&steps, &module_folders(cfg)?)?;
+    }
     agree_on_the_notes_key(&registering)
 }
 
@@ -768,7 +793,12 @@ fn adopt_installed_version(props: &std::collections::HashMap<String, String>) ->
     for name in BUILD_VERSION {
         let value = props.get(name).with_context(|| format!("the installed system says no {name}"))?;
         if skyward_sys::prop(name).as_ref() != Some(value) {
-            skyward_sys::set_prop(name, value)?;
+            // A recovery whose init refuses to change a read-only property
+            // still runs: the keys read the version they find, and a wrong
+            // one only matters to the secure world's own checks.
+            if let Err(e) = skyward_sys::set_prop(name, value) {
+                let _ = skyward_sys::kmsg(&format!("{name} stays as it is: {e:#}"));
+            }
         }
         skyward_sys::kmsg(&format!("{name} is the installed system's {value}"))?;
     }

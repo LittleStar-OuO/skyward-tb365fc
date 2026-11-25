@@ -344,6 +344,11 @@ pub struct Device {
     /// them beside the stock values, so a phone may ask for none of them.
     #[serde(default = "default_true")]
     pub adb_root: bool,
+    /// Whether the key programs (the TEE daemon, KeyMint, Gatekeeper and the
+    /// service directories) are started by init, so that the recovery only
+    /// uses them as clients.
+    #[serde(default)]
+    pub keys_from_init: bool,
     /// The partition this recovery lives in: `recovery` on phones that keep
     /// one, `vendor_boot` on phones whose recovery rides in the vendor boot
     /// image, as MediaTek phones without a recovery partition do.

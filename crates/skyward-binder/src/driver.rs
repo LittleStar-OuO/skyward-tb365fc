@@ -104,17 +104,69 @@ pub fn mount() -> Result<()> {
         }
     }
     for name in ["binder", "hwbinder", "vndbinder"] {
+        // A recovery's init may have mounted the filesystem without making
+        // the hardware and vendor drivers' nodes, which the phone's own
+        // init makes as it starts; the driver's filesystem makes them too,
+        // one asked for through its control node.
         let node = format!("{BINDERFS}/{name}");
+        if !Path::new(&node).exists() {
+            if let Err(e) = binderfs_device(name) {
+                eprintln!("{node} was not made: {e:#}");
+            }
+        }
         let target = format!("/dev/{name}");
-        // The system binder node may be the recovery's own static one.
-        // The hardware and vendor drivers have no other node, so they are
-        // pointed at the filesystem's.
+        // A link left pointing at a node that is not there is taken away
+        // and made again.
+        let dangling = std::fs::symlink_metadata(&target).map(|m| m.file_type().is_symlink()).unwrap_or(false)
+            && !Path::new(&target).exists();
+        if dangling {
+            let _ = std::fs::remove_file(&target);
+        }
         if !Path::new(&target).exists() {
-            std::os::unix::fs::symlink(&node, &target).with_context(|| format!("point {target} at {node}"))?;
+            // Only the hardware binder is needed by the services a recovery
+            // starts; a node the filesystem will not hand over is left out
+            // rather than keeping the whole port from coming up.
+            if let Err(e) = std::os::unix::fs::symlink(&node, &target) {
+                if name == "binder" {
+                    return Err(e).with_context(|| format!("point {target} at {node}"));
+                }
+                eprintln!("{target} was not pointed at {node}: {e}");
+            }
         }
         let _ = std::fs::set_permissions(&node, std::os::unix::fs::PermissionsExt::from_mode(0o666));
     }
     ensure!(Path::new(DEVICE).exists(), "no binder driver at {DEVICE}");
+    Ok(())
+}
+
+/// The driver's filesystem's control node, and the call that makes one of
+/// its devices: the name, then the numbers the driver gives it.
+const BINDER_CONTROL: &str = "/dev/binderfs/binder-control";
+const BINDER_CTL_ADD: libc::c_ulong = 0xC108_6201;
+
+#[repr(C)]
+struct BinderfsDevice {
+    name: [u8; 256],
+    major: u32,
+    minor: u32,
+}
+
+fn binderfs_device(name: &str) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let control = File::options()
+        .read(true)
+        .write(true)
+        .open(BINDER_CONTROL)
+        .with_context(|| format!("open {BINDER_CONTROL}"))?;
+    let mut device = BinderfsDevice { name: [0; 256], major: 0, minor: 0 };
+    let bytes = name.as_bytes();
+    ensure!(bytes.len() < device.name.len(), "{name} is too long for a driver's name");
+    device.name[..bytes.len()].copy_from_slice(bytes);
+    let asked = unsafe { libc::ioctl(control.as_raw_fd(), BINDER_CTL_ADD as libc::c_int, &mut device as *mut BinderfsDevice) };
+    if asked != 0 {
+        return Err(std::io::Error::last_os_error()).with_context(|| format!("ask {BINDER_CONTROL} for {name}"));
+    }
+    eprintln!("the driver made {BINDERFS}/{name} ({}:{})", device.major, device.minor);
     Ok(())
 }
 

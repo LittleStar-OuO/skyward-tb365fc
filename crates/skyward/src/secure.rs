@@ -88,50 +88,68 @@ pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
     // A loader and the lowest libraries are built together and agree
     // between them on how a program's own storage is laid out, so the
     // installed system's programs are loaded by the installed system's
-    // loader rather than by the older one a recovery carries.
+    // loader rather than by the older one a recovery carries. A ramdisk
+    // that already carries the link (as this port's does) keeps it: the
+    // recovery's own policy may refuse to write the system tree at all.
     let loader = Path::new(EARLY_LOADER);
-    let from = bundle(RUNTIME_BUNDLE)?
-        .map(|at| at.join(BUNDLE_LOADER))
-        .filter(|p| p.is_file())
-        .with_context(|| format!("the installed system carries no {RUNTIME_BUNDLE}, which holds the loader its own programs ask for"))?;
-    let dir = loader.parent().expect("the loader is in a directory");
-    fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
-    // Made under the recovery's own umask the folder is root's alone, and
-    // the programs that ask for this loader run as the users their init
-    // scripts name: as the system's own folder is, it is open to all.
-    fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .with_context(|| format!("open {} to every user", dir.display()))?;
-    if loader.exists() {
-        fs::remove_file(loader).with_context(|| format!("take away {}", loader.display()))?;
+    if !loader.exists() {
+        let prepared = (|| -> Result<()> {
+            let from = bundle(RUNTIME_BUNDLE)?
+                .map(|at| at.join(BUNDLE_LOADER))
+                .filter(|p| p.is_file())
+                .with_context(|| format!("the installed system carries no {RUNTIME_BUNDLE}, which holds the loader its own programs ask for"))?;
+            let dir = loader.parent().expect("the loader is in a directory");
+            fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
+            fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .with_context(|| format!("open {} to every user", dir.display()))?;
+            if loader.exists() {
+                fs::remove_file(loader).with_context(|| format!("take away {}", loader.display()))?;
+            }
+            std::os::unix::fs::symlink(&from, loader).with_context(|| format!("point {} at {}", loader.display(), from.display()))?;
+            Ok(())
+        })();
+        if let Err(e) = prepared {
+            let _ = skyward_sys::kmsg(&format!("the hardware directory's loader was not prepared: {e:#}"));
+        }
     }
-    std::os::unix::fs::symlink(&from, loader).with_context(|| format!("point {} at {}", loader.display(), from.display()))?;
     let driver = Path::new(HARDWARE_DRIVER);
     if !driver.exists() {
-        std::os::unix::fs::symlink(HARDWARE_DRIVER_NODE, driver)
-            .with_context(|| format!("point {HARDWARE_DRIVER} at {HARDWARE_DRIVER_NODE}"))?;
+        if let Err(e) = std::os::unix::fs::symlink(HARDWARE_DRIVER_NODE, driver) {
+            let _ = skyward_sys::kmsg(&format!("{HARDWARE_DRIVER} was not pointed at {HARDWARE_DRIVER_NODE}: {e}"));
+        }
     }
     // The system's own init opens the driver to every program, as it does
     // /dev/binder; a recovery's, which uses none of it, leaves it root's
     // alone, and the directory and the services that register with it run
     // as the users their init scripts name.
-    fs::set_permissions(driver, std::os::unix::fs::PermissionsExt::from_mode(0o666))
-        .with_context(|| format!("open {HARDWARE_DRIVER} to every program"))?;
-    let from = Path::new(SERVICE_LABELS);
-    let into = Path::new(RECOVERY_LABELS).join(from.file_name().expect("a named file"));
-    fs::create_dir_all(RECOVERY_LABELS).with_context(|| format!("make {RECOVERY_LABELS}"))?;
-    // The directory reads both of these as the user its init script names,
-    // and what the recovery makes under its own umask is root's alone: they
-    // are given the modes the system's own copies have.
-    fs::set_permissions(RECOVERY_LABELS, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .with_context(|| format!("open {RECOVERY_LABELS} to every user"))?;
-    fs::copy(from, &into).with_context(|| format!("copy {} to {}", from.display(), into.display()))?;
-    fs::write(RECOVERY_MANIFEST, describe_hardware(wanted)?).with_context(|| format!("write {RECOVERY_MANIFEST}"))?;
-    fs::set_permissions(RECOVERY_MANIFEST, std::os::unix::fs::PermissionsExt::from_mode(0o644))
-        .with_context(|| format!("let every user read {RECOVERY_MANIFEST}"))?;
+    if let Err(e) = fs::set_permissions(driver, std::os::unix::fs::PermissionsExt::from_mode(0o666)) {
+        let _ = skyward_sys::kmsg(&format!("{HARDWARE_DRIVER} was not opened to every program: {e}"));
+    }
+    // The labels and the description are written where the directory reads
+    // them; a policy that keeps the recovery from writing the system tree
+    // leaves them to what the ramdisk already carries, and the directory
+    // still starts.
+    let described = (|| -> Result<()> {
+        let from = Path::new(SERVICE_LABELS);
+        let into = Path::new(RECOVERY_LABELS).join(from.file_name().expect("a named file"));
+        fs::create_dir_all(RECOVERY_LABELS).with_context(|| format!("make {RECOVERY_LABELS}"))?;
+        fs::set_permissions(RECOVERY_LABELS, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .with_context(|| format!("open {RECOVERY_LABELS} to every user"))?;
+        fs::copy(from, &into).with_context(|| format!("copy {} to {}", from.display(), into.display()))?;
+        fs::write(RECOVERY_MANIFEST, describe_hardware(wanted)?).with_context(|| format!("write {RECOVERY_MANIFEST}"))?;
+        fs::set_permissions(RECOVERY_MANIFEST, std::os::unix::fs::PermissionsExt::from_mode(0o644))
+            .with_context(|| format!("let every user read {RECOVERY_MANIFEST}"))?;
+        Ok(())
+    })();
+    if let Err(e) = described {
+        let _ = skyward_sys::kmsg(&format!("the hardware directory's descriptions were not written: {e:#}"));
+    }
     // The directory turns itself off when it cannot find its own
     // description, and a run of it before this was written may have left
     // that behind.
-    skyward_sys::set_prop(DIRECTORY_OFF, "false")?;
+    if let Err(e) = skyward_sys::set_prop(DIRECTORY_OFF, "false") {
+        let _ = skyward_sys::kmsg(&format!("{DIRECTORY_OFF} stays as it is: {e:#}"));
+    }
     Ok(())
 }
 
@@ -160,7 +178,15 @@ fn describe_hardware(wanted: &[String]) -> Result<String> {
 /// need no bundle has none to open.
 pub fn libraries() -> Result<Option<PathBuf>> {
     let Some(version) = skyward_sys::prop(VENDOR_INTERFACE) else { return Ok(None) };
-    Ok(bundle(&format!("com.android.vndk.v{version}"))?.map(|at| at.join(BUNDLE_LIBS)))
+    // A bundle the recovery's policy keeps from being mounted is left out;
+    // the programs then load the libraries the recovery and vendor carry.
+    match bundle(&format!("com.android.vndk.v{version}")) {
+        Ok(at) => Ok(at.map(|at| at.join(BUNDLE_LIBS))),
+        Err(e) => {
+            let _ = skyward_sys::kmsg(&format!("the vndk bundle stays unmounted: {e:#}"));
+            Ok(None)
+        }
+    }
 }
 
 /// Open the bundle of this name where it lies, and give where it is. A
@@ -204,12 +230,17 @@ fn image(file: &Path) -> Result<(u64, u64)> {
 /// that one file it cannot make sense of leaves it describing nothing.
 pub fn publish_descriptions(wanted: &[String]) -> Result<()> {
     let into = Path::new(RECOVERY_DESCRIPTIONS);
-    fs::create_dir_all(into).with_context(|| format!("make {}", into.display()))?;
-    // Both directories read these as the users their init scripts name,
-    // and what the recovery makes under its own umask is root's alone: the
-    // folder and the description are given the modes the system's own have.
-    fs::set_permissions(into, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .with_context(|| format!("open {} to every user", into.display()))?;
+    // A recovery whose policy keeps it from writing the system tree keeps
+    // the descriptions the ramdisk already carries; the services that need
+    // them are described there, at build time.
+    if let Err(e) = fs::create_dir_all(into) {
+        let _ = skyward_sys::kmsg(&format!("the descriptions stay as the ramdisk has them: {e:#}"));
+        return Ok(());
+    }
+    if let Err(e) = fs::set_permissions(into, std::os::unix::fs::PermissionsExt::from_mode(0o755)) {
+        let _ = skyward_sys::kmsg(&format!("the descriptions stay as the ramdisk has them: {e:#}"));
+        return Ok(());
+    }
     let to = into.join(PHONE_DESCRIPTION);
     // A service told of twice has the directory take none of what it
     // reads, so what the descriptions the recovery ships with tell of

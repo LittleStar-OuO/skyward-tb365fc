@@ -13,6 +13,8 @@ recovery_partition = "vendor_boot"
 # ro.debuggable twice, and this init refuses them beside the stock values:
 # the recovery keeps the stock ones and takes no adb root of its own.
 adb_root = false
+# init starts the key programs (its policy alone lets them run here)
+keys_from_init = true
 # MediaTek's recovery init never starts the service directory; Skyward starts
 # it once, as xaga does.
 restart_service_directory = false
@@ -41,8 +43,31 @@ load = []
 
 [partitions]
 # The phone mounts persist at /mnt/vendor/persist; the sensors' calibration
-# is there.
-mounted = ["persist"]
+# is there. metadata holds the key directory /data's files are opened with.
+mounted = ["persist", "metadata"]
+
+# The nodes the TEE's programs open, as the phone's own init hands them over
+# before its programs start; a recovery runs none of those lines.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o660
+paths = ["/dev/teei_client", "/dev/teei_config", "/dev/tz_vfs"]
+
+[[owners]]
+user = "system"
+group = "drmrpc"
+mode = 0o666
+paths = ["/dev/isee_tee0"]
+
+# The UFS RPMB unit and its node, through which teei_daemon serves the
+# secure world's storage; the gatekeeper applet reads what it keeps there as
+# it loads.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o660
+paths = ["/dev/0:0:0:49476", "/dev/rpmb0"]
 
 [backup]
 # MediaTek keeps the baseband's and the sensors' settings, with the phone's

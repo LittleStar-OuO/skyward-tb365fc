@@ -321,8 +321,10 @@ impl Credentials {
         } else {
             let bit = |name: &str| skyward_config::capability(name).map(|n| 1u64 << n).with_context(|| format!("{}: {name} is not a capability", s.path));
             let mask = s.capabilities.iter().try_fold(0, |mask, c| bit(c).map(|b| mask | b))?;
-            let last = fs::read_to_string(CAP_LAST_CAP).with_context(|| format!("read {CAP_LAST_CAP}"))?;
-            let last = last.trim().parse().with_context(|| format!("read the number in {CAP_LAST_CAP}"))?;
+            let last = fs::read_to_string(CAP_LAST_CAP)
+                .ok()
+                .and_then(|text| text.trim().parse().ok())
+                .unwrap_or(40u32);
             Some(Kept { mask, dropping: mask | bit("SETPCAP")?, last })
         };
         Ok(Self { uid, gid, groups, kept })

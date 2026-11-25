@@ -131,8 +131,88 @@
 
 ---
 
-## 待续（进行中）
+## 13. recovery 的 binderfs 缺 hwbinder/vndbinder 节点
 
-- **/data 解密**：已加入 teei_daemon / KeyMint 2.0(AIDL) / Gatekeeper(HIDL) / hwservicemanager / boot@1.2 服务与 TEE/RPMB 节点 owners，测试中。
-- **MTP 存储浏览**：MTP 已枚举；/sdcard 需解密 /data 后才可浏览。
-- **WiFi / 振动 / 在线更新 / 双系统**：未开始。
+**现象**：解密报 `point /dev/vndbinder at /dev/binderfs/vndbinder: File exists`；`/dev/vndbinder` 是悬空 symlink。
+
+**原因**：原厂 init 只在正常系统里建这两个节点；recovery 的 binderfs 里没有，init 先建了指向不存在目标的 symlink。
+
+**解决**：Skyward 自己通过 binderfs 的 `binder-control` ioctl（`BINDER_CTL_ADD`）创建 hwbinder/vndbinder 节点，并清理悬空链接；只有 `/dev/binder` 是硬性要求，其余失败仅记录。
+
+**验证**：`/dev/binder` 可打开，后续 KeyMint 查找能走到 servicemanager。
+
+---
+
+## 14. `/dev/pts` 不可读导致 `devices not brought up`
+
+**现象**：`devices not brought up: read /dev/pts: Permission denied`，bring_up 中止。
+
+**原因**：`ueventd::apply()` 递归遍历 /dev 时被 SELinux 拒绝。
+
+**解决**：遍历时跳过不可读目录，赋权失败只记录（尽力而为），不再中止。
+
+---
+
+## 15. 接管版本属性被 init 拒绝
+
+**现象**：`init refused ro.build.version.release=15`。
+
+**解决**：在 init.rc 早期直接 `setprop ro.build.version.release/security_patch/vendor.security_patch`；Skyward 的接管失败仅记录。
+
+---
+
+## 16. 固件 fallback sysctl 被拒
+
+**现象**：`write 1 to /proc/sys/kernel/firmware_config/force_sysfs_fallback: Permission denied`。
+
+**解决**：容错，驱动缺固件时自行报错。
+
+---
+
+## 17. servicemanager 检测误判
+
+**现象**：`ctl.start servicemanager` 被属性权限拒绝；`init.svc.*` 和 `/proc/*/exe` 在 recovery 里都不可读。
+
+**解决**：优先读 `init.svc.servicemanager` 属性判断；无法启动时不中断，改为配置内第一个服务（后改为 init 启动）。
+
+---
+
+## 18. 本机没有 odm 逻辑分区
+
+**现象**：`odm_a is not mounted`，keys 读取中止。
+
+**解决**：`keys::read` 跳过缺失分区，继续读 system_ext/vendor。
+
+---
+
+## 19. recovery 域不能执行 vendor 程序（teei/keymint）
+
+**现象**：`/vendor/bin/teei_daemon: start ... Operation not permitted`；keymint `Permission denied`。文件权限为 0755，排除 DAC；是 SELinux 域限制。
+
+**尝试**：permissive（init.rc 写 enforce、vendor_boot/boot cmdline 的 `androidboot.selinux=permissive`）均未生效。
+
+**当前方案**：改由 **init 启动**这些服务（init 域有执行与域转换权限），Skyward 仅作客户端（`device.keys_from_init = true`）；init.rc 注入：
+- `teei_daemon`（原厂参数、用户/组、SYS_RAWIO）
+- `hwservicemanager`（安装系统的 `/mnt/system_ext/bin/hwservicemanager`）
+- `vendor.keymint-beanpod`（AIDL 2.0）
+- `gatekeeper@1.0-service`、`boot@1.2-service`
+- TEE/RPMB 节点 chown、`hwservicemanager.disabled=false`
+
+**验证**：init 已解析并执行注入的 rc（marker 文件存在）；但 KeyMint 仍未注册，`/dev/teei_client` 等 TEE 节点在 recovery 中缺失，下一阶段需解决 TEE 驱动/固件条件。
+
+---
+
+## 20. 调试手段（无需用户手动输入）
+
+- **pstore 分区分段镜像**（调试版）：stderr 4 KiB；Skyward 日志 1 MiB；init 服务状态 2 MiB；`/dev/kmsg` 转储 3 MiB。重启进系统后用 root `dd if=/dev/block/by-name/pstore` 读取。
+- **init marker 存在性判定**：在 init.rc 各段后 `write /tmp/mk-N 1`，在 recovery 直接用 `adb pull` 判断（`Permission denied` = 存在）。
+- **自动 KeyMint 探测**：调试版启动 25 秒后尝试 `Binder::open` + `KeyMint::open`，结果写 stderr→pstore，无需密码。
+- **摄像头抓屏**：Iriun Webcam + ffmpeg 抓帧读 UI/终端。
+
+---
+
+## 当前状态
+
+- 基础版已验证：显示、触摸、adb、MTP、系统↔recovery 往返。
+- `/data` 解密进行中：AIDL KeyMint 未注册；TEE 节点缺失是主要阻塞。
+- WiFi / 振动 / 在线更新 / 双系统：未开始。

@@ -32,7 +32,7 @@
 | MTP（连接电脑） | √ | Windows 枚举为 Lenovo Xiaoxin Pad 12.1 (2025)；浏览内部存储需先解密 /data |
 | recovery 内 `adb shell` | × | adbd 创建 shell 子进程失败（联想 recovery SELinux 缺 shell 域） |
 | recovery 内 adb root | × | 本机 init 拒绝追加 `ro.secure` 等属性（见下），配置 `adb_root = false` |
-| /data 解密（FBE） | × | 第二阶段：需配置 MTK TEE（teei_daemon + beanpod KeyMint 等） |
+| /data 解密（FBE） | × | 进行中：init 已注入 TEE/KeyMint/Gatekeeper 服务；recovery 中 TEE 节点缺失阻塞 |
 | WiFi | × | 第二阶段：MTK connsys（wlan_assistant/conninfra_loader） |
 | 振动 | × | 未配置（MTK regulator-vibrator 无共振频率节点） |
 | 在线更新 Skyward | × | 未配置发布仓库 |

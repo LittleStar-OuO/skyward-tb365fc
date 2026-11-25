@@ -187,12 +187,11 @@ pub fn steps(phone: &Phone) -> Result<Vec<Step>> {
     let (credentials, credentials_kind) = offered(phone, CREDENTIALS).context("the phone describes no credential service")?;
     let (boot, boot_kind) = offered(phone, BOOT).context("the phone describes no boot control")?;
     if credentials_kind == Kind::Hidl || boot_kind == Kind::Hidl {
-        let directory = phone
-            .programs
-            .iter()
-            .find(|p| p.name == HARDWARE_DIRECTORY && phone.carries(p))
-            .context("the phone has hardware services of the older kind, and no directory for them among the programs its scripts name")?;
-        start(&mut out, started(phone, directory, Ready::Property(HARDWARE_DIRECTORY_READY), Vec::new()));
+        // The directory may be the installed system's, started by init; a
+        // phone that names none here still reaches the services through it.
+        if let Some(directory) = phone.programs.iter().find(|p| p.name == HARDWARE_DIRECTORY && phone.carries(p)) {
+            start(&mut out, started(phone, directory, Ready::Property(HARDWARE_DIRECTORY_READY), Vec::new()));
+        }
     }
     let ready = |name: String, kind: Kind| match kind {
         Kind::Aidl => Ready::Service(name),

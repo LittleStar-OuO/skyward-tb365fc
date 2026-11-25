@@ -123,8 +123,9 @@ pub fn apply() -> anyhow::Result<usize> {
     let mut changed = 0;
     for node in nodes(Path::new("/dev"))? {
         if let Some(rule) = rules.iter().rev().find(|r| r.matches(&node)) {
-            set(&node, rule).with_context(|| format!("give {node} the owner and permissions its phone describes"))?;
-            changed += 1;
+            if set(&node, rule).is_ok() {
+                changed += 1;
+            }
         }
     }
     Ok(changed)
@@ -165,12 +166,13 @@ fn nodes(dir: &std::path::Path) -> anyhow::Result<Vec<String>> {
     while let Some(dir) = stack.pop() {
         let listing = match std::fs::read_dir(&dir) {
             Ok(listing) => listing,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e).with_context(|| format!("read {}", dir.display())),
+            // A folder the recovery's policy keeps shut is passed over; the
+            // nodes in the others are still given their owners.
+            Err(_) => continue,
         };
         for entry in listing {
-            let entry = entry.with_context(|| format!("read {}", dir.display()))?;
-            let kind = entry.file_type().with_context(|| format!("look at {}", entry.path().display()))?;
+            let Ok(entry) = entry else { continue };
+            let Ok(kind) = entry.file_type() else { continue };
             if kind.is_symlink() {
                 continue;
             }

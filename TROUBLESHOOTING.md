@@ -198,7 +198,12 @@
 - `gatekeeper@1.0-service`、`boot@1.2-service`
 - TEE/RPMB 节点 chown、`hwservicemanager.disabled=false`
 
-**验证**：init 已解析并执行注入的 rc（marker 文件存在）；但 KeyMint 仍未注册，`/dev/teei_client` 等 TEE 节点在 recovery 中缺失，下一阶段需解决 TEE 驱动/固件条件。
+**关键发现**：
+1. `/dev/teei_client` 等 TEE 节点**其实存在**（内核日志里标签为 `teei_client_device`），只是 recovery 域 `getattr` 被拒 → Skyward 误报“节点不存在”。由 init 启动服务时它们就在 init 侧可见。
+2. `class_start hal` 在 `on boot`（约 8.09 s）执行，而 system/system_ext/vendor 在 8.2 s 后才挂载，所以 init 报 `Cannot find '/vendor/bin/teei_daemon'`。服务必须在分区挂载后启动。
+3. 因此改为：Skyward 在挂载完成后设置属性 `skyward.keys=1`，init 的触发器再 `start` 这些服务（而不是 `class_start hal`）。
+
+**验证计划**：dec23（显式 `start` 触发）为下一候选；dec22（`class keys` + `class_start`）在真机上黑屏且无 adb，先回刷已知可用镜像再验证 dec23。
 
 ---
 

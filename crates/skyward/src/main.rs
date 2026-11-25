@@ -668,8 +668,14 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         skyward_sys::kmsg(&format!("for the phone's keys: {}", line.replace("\n  ", ", ")))?;
     }
     // Where init starts the key programs, its policy alone lets them run;
-    // starting them here as the recovery user cannot.
-    if !cfg.device.keys_from_init {
+    // starting them here as the recovery user cannot. They are of a class
+    // of their own, started once the partitions holding them are mounted,
+    // which is now; init's own class start came before that.
+    if cfg.device.keys_from_init {
+        if let Err(e) = skyward_sys::set_prop("skyward.keys", "1") {
+            let _ = skyward_sys::kmsg(&format!("init was not asked for the key programs: {e:#}"));
+        }
+    } else {
         keys::start(&steps, &module_folders(cfg)?)?;
     }
     agree_on_the_notes_key(&registering)

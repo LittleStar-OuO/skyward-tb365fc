@@ -50,7 +50,6 @@ on boot
     write /tmp/init-our-boot yes
 
 ${teeiCmd}
-    class hal
     user 1000
     group 1000
     capabilities SYS_RAWIO
@@ -58,21 +57,18 @@ on boot
     write /tmp/mk-1 1
 
 service hwservicemanager /mnt/system_ext/bin/hwservicemanager
-    class hal
     user 1000
     group 1000 3009
 on boot
     write /tmp/mk-2 1
 
 service vendor.keymint-beanpod /vendor/bin/hw/android.hardware.security.keymint@2.0-service.beanpod
-    class hal
     user 999
     group 999
 on boot
     write /tmp/mk-3 1
 
 service vendor.gatekeeper-1-0 /vendor/bin/hw/android.hardware.gatekeeper@1.0-service
-    class hal
     interface android.hardware.gatekeeper@1.0::IGatekeeper default
     user 1000
     group 1000
@@ -80,7 +76,6 @@ on boot
     write /tmp/mk-4 1
 
 service vendor.boot-1-2 /mnt/system_ext/bin/android.hardware.boot@1.2-service
-    class hal
     user 0
     group 0
 on boot
@@ -101,6 +96,17 @@ on boot
     chown system system /dev/rpmb0
     chmod 0660 /dev/rpmb0
     setprop hwservicemanager.disabled false
+
+
+# The key services start once the recovery has mounted the partitions that
+# hold their programs: it says so through this property.
+on property:skyward.keys=1
+    setprop hwservicemanager.disabled false
+    start teei_daemon
+    start hwservicemanager
+    start vendor.keymint-beanpod
+    start vendor.gatekeeper-1-0
+    start vendor.boot-1-2
 
 ${statusTriggers}`;
 
@@ -125,7 +131,18 @@ let main = fs.readFileSync(path.join(root, 'xaga-skyward/crates/skyward/src/main
 const servicesList = JSON.stringify(services);
 const probe = [
   '        std::thread::spawn(|| {',
-  '            std::thread::sleep(std::time::Duration::from_secs(25));',
+  '            std::thread::sleep(std::time::Duration::from_secs(20));',
+  '            // The kernel buffer as it stands once the recovery is up: what the',
+  '            // TEE drivers and init said of themselves while it came up.',
+  '            let mut buf = vec![0u8; 1024 * 1024];',
+  '            let n = unsafe { libc::syscall(libc::SYS_syslog, 3, buf.as_mut_ptr(), buf.len() as libc::c_int) };',
+  '            let text = if n > 0 { String::from_utf8_lossy(&buf[..n as usize]).into_owned() } else { format!("syslog read_all: {}", std::io::Error::last_os_error()) };',
+  '            if let Ok(mut o) = std::fs::OpenOptions::new().write(true).custom_flags(libc::O_SYNC).open("/dev/block/by-name/pstore") {',
+  '                use std::io::{Seek, Write};',
+  '                let _ = o.seek(std::io::SeekFrom::Start(3145728));',
+  '                let _ = o.write_all(text.as_bytes());',
+  '            }',
+  '            eprintln!("PROBE syslog: {n} bytes");',
   '            match skyward_binder::driver::Binder::open() {',
   '                Ok(binder) => match skyward_crypto::keymint::KeyMint::open(&binder) {',
   '                    Ok(_) => eprintln!("PROBE keymint: open ok"),',
@@ -136,17 +153,6 @@ const probe = [
   '            match skyward_binder::driver::Binder::hardware() {',
   '                Ok(_) => eprintln!("PROBE hwbinder: open ok"),',
   '                Err(e) => eprintln!("PROBE hwbinder: {e:#}"),',
-  '            }',
-  '            std::thread::sleep(std::time::Duration::from_secs(8));',
-  '            if let Ok(f) = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open("/dev/kmsg") {',
-  '                use std::io::Read;',
-  '                let mut buf = Vec::new();',
-  '                let _ = f.take(512 * 1024).read_to_end(&mut buf);',
-  '                if let Ok(mut o) = std::fs::OpenOptions::new().write(true).custom_flags(libc::O_SYNC).open("/dev/block/by-name/pstore") {',
-  '                    use std::io::{Seek, Write};',
-  '                    let _ = o.seek(std::io::SeekFrom::Start(3145728));',
-  '                    let _ = o.write_all(&buf);',
-  '                }',
   '            }',
   '        });',
 ].join('\n');

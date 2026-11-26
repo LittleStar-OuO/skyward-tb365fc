@@ -1,0 +1,32 @@
+# The key stack starts once adb is bound, after the recovery has mounted
+# the partitions these programs and their libraries live on.
+on property:tb365.usb.bound=1
+    start tb365_teei
+    start tb365_hwsvc
+    start tb365_keymint
+    start tb365_gatekeeper
+
+service tb365_teei /system/bin/sh /system/bin/tb365_teei.sh
+    class core
+    user root
+    group root
+    capabilities SYS_RAWIO
+    seclabel u:r:recovery:s0
+
+service tb365_hwsvc /system/bin/sh /system/bin/tb365_hwservice.sh
+    class core
+    user root
+    group root
+    seclabel u:r:recovery:s0
+
+service tb365_keymint /system/bin/sh /system/bin/tb365_keymint.sh
+    class core
+    user root
+    group root
+    seclabel u:r:recovery:s0
+
+service tb365_gatekeeper /system/bin/sh /system/bin/tb365_gatekeeper.sh
+    class core
+    user root
+    group root
+    seclabel u:r:recovery:s0

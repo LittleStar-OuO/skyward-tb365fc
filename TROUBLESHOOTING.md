@@ -300,3 +300,19 @@
 结果：无头探针中 `convertStorageKeyToEphemeral` 与 `begin/abort` 都进入 TEE（假 key 得到 KeyMint 业务错误 -33）；真实 PIN 下 Skyward 成功解密并挂载 `/data`（dm-9，f2fs rw），文件管理可浏览。
 
 同时确认：**v33 的 /system/lib64/libbinder_ndk 在 recovery 可用，v35 会挂起**（因此 HAL 都使用 recovery 自带库）。
+
+## 26. 最终状态与复现说明
+
+**已验证镜像**：`out/dec88.img`（vendor_boot，64 MiB）。开机后：
+- `zz-tb365-usb.rc` 启动 adbd 并一次性绑定 adb（`tb365.usb.bound=1`，`sys.usb.state=adb`），Skyward 的 `usb::set/switch` 为空操作，端口此后不再被改动；
+- `zz-tb365-crypto.rc` 在 `tb365.usb.bound=1` 时启动 `tb365_teei / tb365_hwsvc / tb365_keymint / tb365_gatekeeper`（全部 recovery 域、root，使用 recovery 自带的 linker/库）；
+- 无头探针（调试版）在开机 20 s 跑 `convertStorageKeyToEphemeral` 与 `begin/abort`，结果写 pstore，便于不点屏回归；
+- 用户输入 PIN 后 metadata+FBE 解封，`/data` 挂载为 dm-9（f2fs rw），文件管理可浏览。
+
+**复现要点**：
+1. 构建后必须把 `target/release/skyward-pack` 复制到 `tools/skyward-pack`（脚本曾遗漏，导致 `mtp.rc` 改动不进镜像，也是 USB 反复消失的间接原因）。
+2. KeyMint 报文 = **RECO 头 + token**，参数用 C++ 结构化 parcelable（presence+size），`byte[]` 对齐；不要用 NDK 的无信封布局。
+3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
+4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
+
+**已知限制**：MTP 暂关（先保 USB/adb 稳定）；recovery 的 SELinux 策略含 permissive 域（开发镜像）；`adb shell` 仍不可用（联想 recovery 策略缺 shell 域）；调试版含开机探针。

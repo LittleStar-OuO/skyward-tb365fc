@@ -75,29 +75,3 @@ efs = ["nvdata", "nvcfg", "protect1", "protect2", "persist"]
 
 [wipe]
 logs = ["/data/vendor/mtklog", "/data/vendor/connsyslog"]
-
-# The crypto stack the reference Lenovo MT6835 tree proved: every one of
-# these runs in the recovery domain, with the recovery's own linker and
-# libraries, as the phone's own init runs them on a working phone.
-libraries = ["/mnt/system_ext/lib64", "/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64"]
-user = "root"
-groups = ["root"]
-ready_property = "hwservicemanager.ready"
-
-[[service]]
-path = "/system/bin/sh"
-args = ["/system/bin/tb365_teei.sh"]
-user = "root"
-groups = ["root"]
-
-[[service]]
-path = "/system/bin/sh"
-args = ["/system/bin/tb365_keymint.sh"]
-user = "root"
-groups = ["root"]
-
-[[service]]
-path = "/system/bin/sh"
-args = ["/system/bin/tb365_gatekeeper.sh"]
-user = "root"
-groups = ["root"]

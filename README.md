@@ -29,10 +29,10 @@
 | 安装（zip / 分区镜像） | × | 尚未验证 |
 | 备份 / 恢复 | × | 尚未验证 |
 | 双系统 | × | 尚未验证 |
-| MTP（连接电脑） | √ | Windows 枚举为 Lenovo Xiaoxin Pad 12.1 (2025)；浏览内部存储需先解密 /data |
+| MTP（连接电脑） | × | 暂关：为保证 USB/adb 稳定，Skyward 不再切换端口，只用 adb；后续按已定位的“重复绑定”根因安全恢复 |
 | recovery 内 `adb shell` | × | adbd 创建 shell 子进程失败（联想 recovery SELinux 缺 shell 域） |
 | recovery 内 adb root | × | 本机 init 拒绝追加 `ro.secure` 等属性（见下），配置 `adb_root = false` |
-| /data 解密（FBE） | × | 进行中：init 已注入 TEE/KeyMint/Gatekeeper 服务；recovery 中 TEE 节点缺失阻塞 |
+| /data 解密（FBE） | √ | Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper；metadata 与 FBE 均解开，/data 挂载为 dm-9 (f2fs rw)，文件管理可浏览 |
 | WiFi | × | 第二阶段：MTK connsys（wlan_assistant/conninfra_loader） |
 | 振动 | × | 未配置（MTK regulator-vibrator 无共振频率节点） |
 | 在线更新 Skyward | × | 未配置发布仓库 |
@@ -78,7 +78,7 @@ target/release/skyward-pack recovery \
 
 `stock/vendor_boot.img` 为原厂 `TB365FC_ZUXOS_1.1.10.122` 刷机包中的 `vendor_boot.img`（整分区 64 MiB，末尾带 AVB footer）。产物应为 67,108,864 字节并以 `AVBf` 结尾。
 
-当前已验证镜像（显示/触摸/adb/MTP）：
+当前已验证镜像（显示/触摸/adb/解密；MTP 暂关）：
 
 | 文件 | SHA-256 |
 | --- | --- |

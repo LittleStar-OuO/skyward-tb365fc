@@ -9,10 +9,9 @@ os_version_prop = "ro.build.display.id"
 # recovery partition, and the vendor ramdisk carries /init, system/bin/recovery,
 # recovery.fstab and res/.
 recovery_partition = "vendor_boot"
-# The stock property file already carries ro.secure, ro.adb.secure and
-# ro.debuggable twice, and this init refuses them beside the stock values:
-# the recovery keeps the stock ones and takes no adb root of its own.
-adb_root = false
+# The debug policy lets adbd take its own context back and the shell beside
+# it; the stock values are replaced by the packer.
+adb_root = true
 # init starts the key programs (its policy alone lets them run here)
 keys_from_init = true
 # MediaTek's recovery init never starts the service directory; Skyward starts
@@ -76,3 +75,31 @@ efs = ["nvdata", "nvcfg", "protect1", "protect2", "persist"]
 
 [wipe]
 logs = ["/data/vendor/mtklog", "/data/vendor/connsyslog"]
+
+# The crypto stack the reference Lenovo MT6835 tree proved: every one of
+# these runs in the recovery domain, with the recovery's own linker and
+# libraries, as the phone's own init runs them on a working phone.
+[[service]]
+path = "/skyware/bin/hwservicemanager"
+libraries = ["/mnt/system_ext/lib64", "/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64"]
+user = "root"
+groups = ["root"]
+ready_property = "hwservicemanager.ready"
+
+[[service]]
+path = "/system/bin/sh"
+args = ["/system/bin/tb365_teei.sh"]
+user = "root"
+groups = ["root"]
+
+[[service]]
+path = "/system/bin/sh"
+args = ["/system/bin/tb365_keymint.sh"]
+user = "root"
+groups = ["root"]
+
+[[service]]
+path = "/system/bin/sh"
+args = ["/system/bin/tb365_gatekeeper.sh"]
+user = "root"
+groups = ["root"]

@@ -236,3 +236,21 @@
 - 基础版已验证：显示、触摸、adb、MTP、系统↔recovery 往返。
 - `/data` 解密进行中：AIDL KeyMint 未注册；TEE 节点缺失是主要阻塞。
 - WiFi / 振动 / 在线更新 / 双系统：未开始。
+
+## 22. recovery 的 servicemanager 与 KeyMint 查找（进行中）
+
+**现象**：解密界面报 `look up android.hardware.security.keymint.IKeyMintDevice/default: the directory answered no method this recovery knows`；而 TEE/KeyMint/Gatekeeper/hwservicemanager 均已运行（`vendor.soter.teei.km.init=finish`）。
+
+**证据**：对 stock recovery servicemanager 用方法码 1–4（带头/不带头两种 parcel 布局）全部得到 `EX_TRANSACTION_FAILED (-2147483647)`，即每次都有回包但被目录以异常拒绝；这与“接口令牌/方法编号与该 recovery 目录不匹配”一致。
+
+**已做的容错**：`crates/skyward-binder` 现在对 `find/add/declared/names` 同时尝试 `SYST` 头布局与“仅接口令牌”布局，并尝试两套方法编号（33/36 世代），失败时 `declared` 按已声明继续。
+
+**参考**：联想 TB336ZA（同为 MT6835、vendor_boot 恢复、Android 15）TWRP 树已实现解密（github.com/9cb14c1ec0/android_device_lenovo_sycamore_row_5G）：
+- crypto 服务全部以 `u:r:recovery:s0` 运行（原版 vendor 二进制 + recovery 自带 linker/库，VNDK v33 的 keymint-V2/secureclock/sharedsecret 放在库路径里）。
+- TEE 起来后（dmesg “Keymaster Unlocked”、`vendor.soter.teei.init=INIT_OK`）再启动 KeyMint。
+- `hwservicemanager` 需要 recovery 框架清单里声明 `android.hidl.manager@1.2::IServiceManager`，否则判定“不支持 HIDL”自行退出；HIDL 设备 HAL（gatekeeper）必须在 /vendor 清单声明。
+- `plat_hwservice_contexts` 必须完整（含 `android.hidl.base::IBase`），否则 gatekeeper 注册被拒。
+- device 型 VINTF fragment 不能放在 `/system/etc/vintf/manifest/` 框架目录，否则 libvintf 组装失败；该目录的 health 示例已替换为空框架清单。
+- 他们直接以 recovery 域跑原版 `servicemanager`/`keystore2`；本移植由 Skyward 直接调用 KeyMint。
+
+**当前状态**：dec67 开机四件套（TEE/KeyMint/Gatekeeper/hwsvc）全部正常；仅剩 Skyward 对 stock recovery servicemanager 的 AIDL 方法编号/令牌仍不匹配，继续用 1..12 全码探测定位。

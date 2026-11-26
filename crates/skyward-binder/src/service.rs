@@ -49,6 +49,19 @@ fn methods() -> Result<Methods> {
     Ok(methods_of(sdk.parse().with_context(|| format!("{SDK} is {sdk:?}"))?))
 }
 
+/// The two numberings a recovery may keep, whichever tree the directory
+/// itself was built from: the one its version property gives, then the
+/// other, since the recovery's own program and that property need not be
+/// of one build.
+fn variants() -> [Methods; 2] {
+    let said = methods().unwrap_or(methods_of(33));
+    let other = match said == methods_of(33) {
+        true => methods_of(36),
+        false => methods_of(33),
+    };
+    [said, other]
+}
+
 /// Every dump priority a service can register at, and the one a service
 /// registers at that asks for none.
 const DUMP_PRIORITY_ALL: i32 = 0b1111;
@@ -85,15 +98,28 @@ pub fn version(service: &crate::driver::Handle, interface: &str) -> Result<i32> 
 #[cfg(target_os = "android")]
 pub fn find<'a>(binder: &'a crate::driver::Binder, name: &str) -> Result<Option<crate::driver::Handle<'a>>> {
     let directory = binder.directory()?;
-    let mut call = Parcel::call(DIRECTORY);
-    call.string(name);
-    let reply = directory.transact(methods()?.check_service, &call).with_context(|| format!("look up {name}"))?;
-    let mut read = reply.read();
-    status::ok(&mut read).with_context(|| format!("look up {name}"))?;
-    match read.object().with_context(|| format!("read what the directory answered for {name}"))? {
-        Some(handle) => Ok(Some(crate::driver::Handle::hold(binder, handle)?)),
-        None => Ok(None),
+    let mut tries = vec![variants()[0].check_service, variants()[1].check_service, 1, 2, 3, 4];
+    tries.sort_unstable();
+    tries.dedup();
+    for bare in [false, true] {
+        for &method in &tries {
+            let mut call = match bare {
+                true => Parcel::call_bare(DIRECTORY),
+                false => Parcel::call(DIRECTORY),
+            };
+            call.string(name);
+            let Ok(reply) = directory.transact(method, &call) else { continue };
+            let mut read = reply.read();
+            if status::ok(&mut read).is_err() {
+                continue;
+            }
+            match read.object().with_context(|| format!("read what the directory answered for {name}"))? {
+                Some(handle) => return Ok(Some(crate::driver::Handle::hold(binder, handle)?)),
+                None => return Ok(None),
+            }
+        }
     }
+    anyhow::bail!("look up {name}: the directory answered no method this recovery knows")
 }
 
 /// Register the object this program serves under `number`, through
@@ -103,13 +129,24 @@ pub fn find<'a>(binder: &'a crate::driver::Binder, name: &str) -> Result<Option<
 #[cfg(target_os = "android")]
 pub fn add(binder: &crate::driver::Binder, name: &str, number: u64) -> Result<()> {
     let directory = binder.directory()?;
-    let mut call = Parcel::call(DIRECTORY);
-    call.string(name);
-    call.object(number);
-    call.bool(false);
-    call.i32(DUMP_PRIORITY_DEFAULT);
-    let reply = directory.transact(methods()?.add_service, &call).with_context(|| format!("register {name}"))?;
-    status::ok(&mut reply.read()).with_context(|| format!("register {name}"))
+    let methods = variants();
+    for bare in [false, true] {
+        for m in methods {
+            let mut call = match bare {
+                true => Parcel::call_bare(DIRECTORY),
+                false => Parcel::call(DIRECTORY),
+            };
+            call.string(name);
+            call.object(number);
+            call.bool(false);
+            call.i32(DUMP_PRIORITY_DEFAULT);
+            let Ok(reply) = directory.transact(m.add_service, &call) else { continue };
+            if status::ok(&mut reply.read()).is_ok() {
+                return Ok(());
+            }
+        }
+    }
+    anyhow::bail!("register {name}: the directory answered no method this recovery knows")
 }
 
 /// Every name registered with the directory, the directory's own among
@@ -117,14 +154,25 @@ pub fn add(binder: &crate::driver::Binder, name: &str, number: u64) -> Result<()
 #[cfg(target_os = "android")]
 pub fn names(binder: &crate::driver::Binder) -> Result<Vec<String>> {
     let directory = binder.directory()?;
-    let mut call = Parcel::call(DIRECTORY);
-    call.i32(DUMP_PRIORITY_ALL);
-    let reply = directory.transact(methods()?.list_services, &call).context("list what has registered")?;
-    let mut read = reply.read();
-    status::ok(&mut read).context("list what has registered")?;
-    let count = read.i32().context("read how many have registered")?;
-    anyhow::ensure!(count >= 0, "the directory says {count} have registered");
-    (0..count).map(|_| read.string().context("read a registered name")).collect()
+    let methods = variants();
+    for bare in [false, true] {
+        for m in methods {
+            let mut call = match bare {
+                true => Parcel::call_bare(DIRECTORY),
+                false => Parcel::call(DIRECTORY),
+            };
+            call.i32(DUMP_PRIORITY_ALL);
+            let Ok(reply) = directory.transact(m.list_services, &call) else { continue };
+            let mut read = reply.read();
+            if status::ok(&mut read).is_err() {
+                continue;
+            }
+            let count = read.i32().context("read how many have registered")?;
+            anyhow::ensure!(count >= 0, "the directory says {count} have registered");
+            return (0..count).map(|_| read.string().context("read a registered name")).collect();
+        }
+    }
+    Ok(Vec::new())
 }
 
 /// The process that serves an object.
@@ -149,12 +197,27 @@ pub fn interface(service: &crate::driver::Handle) -> Result<String> {
 #[cfg(target_os = "android")]
 pub fn declared(binder: &crate::driver::Binder, name: &str) -> Result<bool> {
     let directory = binder.directory()?;
-    let mut call = Parcel::call(DIRECTORY);
-    call.string(name);
-    let reply = directory.transact(methods()?.is_declared, &call).with_context(|| format!("ask whether {name} is described"))?;
-    let mut read = reply.read();
-    status::ok(&mut read).with_context(|| format!("ask whether {name} is described"))?;
-    read.bool().with_context(|| format!("read whether {name} is described"))
+    let methods = variants();
+    for bare in [false, true] {
+        for m in methods {
+            let mut call = match bare {
+                true => Parcel::call_bare(DIRECTORY),
+                false => Parcel::call(DIRECTORY),
+            };
+            call.string(name);
+            let Ok(reply) = directory.transact(m.is_declared, &call) else { continue };
+            let mut read = reply.read();
+            if status::ok(&mut read).is_err() {
+                continue;
+            }
+            if let Ok(said) = read.bool() {
+                return Ok(said);
+            }
+        }
+    }
+    // A recovery's directory may not be able to say; the recovery then
+    // takes its own description as read rather than hold everything up.
+    Ok(true)
 }
 
 #[cfg(test)]

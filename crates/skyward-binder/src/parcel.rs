@@ -77,6 +77,14 @@ impl Parcel {
         Parcel::call_with(interface, HEADER_SYSTEM)
     }
 
+    /// A call whose parcel opens with the interface name alone, as the C++
+    /// libbinder of an older recovery writes it.
+    pub fn call_bare(interface: &str) -> Parcel {
+        let mut p = Parcel::default();
+        p.string(interface);
+        p
+    }
+
     /// A call to a service built against the vendor copy of libbinder, which
     /// the phone's own hardware services are.
     pub fn call_vendor(interface: &str) -> Parcel {

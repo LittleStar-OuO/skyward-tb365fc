@@ -84,6 +84,15 @@ impl Parcel {
     }
 
     /// A call to a service of the newer kind: its parcel opens with the
+    /// interface name as a string that is not padded, which is how the
+    /// newer libbinder writes the token it is given.
+    pub fn call_raw(interface: &str) -> Parcel {
+        let mut p = Parcel::default();
+        p.string_raw(interface);
+        p
+    }
+
+    /// A call to a service of the newer kind: its parcel opens with the
     /// arguments themselves, the interface token being the driver's.
     pub fn call_none(_interface: &str) -> Parcel {
         Parcel::default()
@@ -191,6 +200,15 @@ impl Parcel {
 
     /// Text, as the count of UTF-16 units, those units, a terminator, and
     /// padding to the next four.
+    pub fn string_raw(&mut self, s: &str) {
+        let units: Vec<u16> = s.encode_utf16().collect();
+        self.i32(units.len() as i32);
+        for u in &units {
+            self.data.extend_from_slice(&u.to_le_bytes());
+        }
+        self.data.extend_from_slice(&0u16.to_le_bytes());
+    }
+
     pub fn string(&mut self, s: &str) {
         let units: Vec<u16> = s.encode_utf16().collect();
         self.i32(units.len() as i32);

@@ -297,6 +297,91 @@ fn main() -> Result<()> {
             eprintln!("PROBE syslog: {n} bytes");
             match skyward_binder::driver::Binder::open() {
                 Ok(binder) => match skyward_crypto::keymint::KeyMint::open(&binder) {
+                    Ok(km) => {
+                        eprintln!("PROBE keymint: open ok");
+                        let key = std::fs::read("/metadata/vold/metadata_encryption/key").unwrap_or_else(|_| vec![0u8; 64]);
+                        eprintln!("PROBE keymint: key {} bytes", key.len());
+                        match km.ephemeral_storage_key(&key) {
+                            Ok(out) => eprintln!("PROBE convert: ok {} bytes", out.len()),
+                            Err(e) => eprintln!("PROBE convert: {e:#}"),
+                        }
+                        match km.usable(&key, b"") {
+                            Ok(()) => eprintln!("PROBE begin/abort: ok"),
+                            Err(e) => eprintln!("PROBE begin/abort: {e:#}"),
+                        }
+                    }
+                    Err(e) => eprintln!("PROBE keymint: {e:#}"),
+                },
+                Err(e) => eprintln!("PROBE binder: {e:#}"),
+            }
+            match skyward_binder::driver::Binder::hardware() {
+                Ok(_) => eprintln!("PROBE hwbinder: open ok"),
+                Err(e) => eprintln!("PROBE hwbinder: {e:#}"),
+            }
+        });
+        eprintln!("skyward: start (dec debug)");
+    }
+    #[cfg(target_os = "android")]
+    unsafe {
+        use std::io::Seek;
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::io::AsRawFd;
+        // Clear the regions this debug build mirrors into; a block device
+        // keeps what an earlier boot wrote past the end of a shorter log.
+        if let Ok(mut f) = std::fs::OpenOptions::new().write(true).custom_flags(libc::O_SYNC).open("/dev/block/by-name/pstore") {
+            use std::io::Write;
+            let _ = f.seek(std::io::SeekFrom::Start(4096));
+            libc::dup2(f.as_raw_fd(), 1);
+            libc::dup2(f.as_raw_fd(), 2);
+            let zeros = vec![0u8; 1024 * 1024];
+            let _ = f.seek(std::io::SeekFrom::Start(1048576));
+            let _ = f.write_all(&zeros);
+        }
+        // Files init writes its service states into are made here first, under
+        // the recovery's own label, so that the recovery may read them back.
+        for name in ["teei_daemon","vendor.keymint-beanpod","hwservicemanager","vendor.gatekeeper-1-0","vendor.boot-hal-1-2"] {
+            let _ = std::fs::write(format!("/tmp/svc-{name}"), b"");
+        }
+        std::thread::spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            let names: [&str; 5] = ["teei_daemon","vendor.keymint-beanpod","hwservicemanager","vendor.gatekeeper-1-0","vendor.boot-hal-1-2"];
+            let mut said = String::new();
+            let marker = std::fs::read_to_string("/tmp/init-our-boot").map(|s| s.trim().to_string()).ok();
+            let init_marker = std::fs::read_to_string("/tmp/init-our-init").map(|s| s.trim().to_string()).ok();
+            said.push_str(&format!("init-marker={init_marker:?} boot-marker={marker:?}\n"));
+            for name in names {
+                let state = std::fs::read_to_string(format!("/tmp/svc-{name}")).map(|s| s.trim().to_string()).ok();
+                let prop = skyward_sys::prop(&format!("init.svc.{name}"));
+                said.push_str(&format!("{name}: file={state:?} prop={prop:?}\n"));
+            }
+            if let Ok(mut f) = std::fs::OpenOptions::new().write(true).custom_flags(libc::O_SYNC).open("/dev/block/by-name/pstore") {
+                use std::io::Write;
+                let _ = f.seek(std::io::SeekFrom::Start(2097152));
+                let _ = f.write_all(said.as_bytes());
+            }
+            let Ok(text) = std::fs::read("/tmp/skyward/recovery.log") else { continue };
+            let start = text.len().saturating_sub(200 * 1024);
+            if let Ok(mut f) = std::fs::OpenOptions::new().write(true).custom_flags(libc::O_SYNC).open("/dev/block/by-name/pstore") {
+                use std::io::Write;
+                let _ = f.seek(std::io::SeekFrom::Start(1048576));
+                let _ = f.write_all(&text[start..]);
+            }
+        });
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            // The kernel buffer as it stands once the recovery is up: what the
+            // TEE drivers and init said of themselves while it came up.
+            let mut buf = vec![0u8; 1024 * 1024];
+            let n = unsafe { libc::syscall(libc::SYS_syslog, 3, buf.as_mut_ptr(), buf.len() as libc::c_int) };
+            let text = if n > 0 { String::from_utf8_lossy(&buf[..n as usize]).into_owned() } else { format!("syslog read_all: {}", std::io::Error::last_os_error()) };
+            if let Ok(mut o) = std::fs::OpenOptions::new().write(true).custom_flags(libc::O_SYNC).open("/dev/block/by-name/pstore") {
+                use std::io::{Seek, Write};
+                let _ = o.seek(std::io::SeekFrom::Start(3145728));
+                let _ = o.write_all(text.as_bytes());
+            }
+            eprintln!("PROBE syslog: {n} bytes");
+            match skyward_binder::driver::Binder::open() {
+                Ok(binder) => match skyward_crypto::keymint::KeyMint::open(&binder) {
                     Ok(_) => eprintln!("PROBE keymint: open ok"),
                     Err(e) => eprintln!("PROBE keymint: {e:#}"),
                 },

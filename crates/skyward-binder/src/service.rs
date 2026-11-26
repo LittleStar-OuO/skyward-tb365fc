@@ -87,7 +87,7 @@ const INTERFACE_VERSION: u32 = 0x00ff_ffff;
 #[cfg(target_os = "android")]
 pub fn version(service: &crate::driver::Handle, interface: &str) -> Result<i32> {
     let what = format!("ask which version of {interface} is served");
-    let reply = service.transact(INTERFACE_VERSION, &Parcel::call_none(interface)).with_context(|| what.clone())?;
+    let reply = service.transact(INTERFACE_VERSION, &Parcel::call_recovery(interface)).with_context(|| what.clone())?;
     let mut read = reply.read();
     status::ok(&mut read).with_context(|| what.clone())?;
     read.i32().with_context(|| what)

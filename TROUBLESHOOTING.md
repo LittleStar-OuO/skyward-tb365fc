@@ -282,3 +282,9 @@
 - **recovery 自带 v33 的 libbinder_ndk 工作正常**，能查到 KeyMint（`FOUND`），且与开机时 health/KeyMint 注册用的库一致；
 - KeyMint V2 的 `BpKeyMintDevice::begin` 反汇编显示 `AIBinder_prepareTransaction` 后**直接写参数**（无接口令牌）；`begin` 失败更可能在 **KeyParameter/byteArray 的序列化细节**（AIDL NDK 的数组/可分段编码与 Skyward 现有 C++ 风格布局的差异）。
 - 下一步：使用 **v33 libbinder_ndk 的 AParcel C API** 写一个 KeyMint C shim（getHardwareInfo/begin/update/finish/abort），Rust 通过 FFI 调用；或继续逐项对齐 begin 的参数编码。
+
+**续 3（重大进展）**：给 HAL 的 AIDL 事务改成 **recovery 头（0x5245434F "RECO"）+ 接口令牌**（与目录调用同一格式）。logd 里 KeyMint 接收端曾明确报 `Expecting header 0x5245434f but found ... Mixing copies of libbinder?`。之后：
+- `convertStorageKeyToEphemeral`（只带一个 byte[]）已被 TEE 处理，返回 KeyMint 业务错误 **-33（version mismatch，符合假 key）**——说明事务、TEE、keymint 全链路通了；
+- `begin` 仍被服务端以 **-22（EX_ILLEGAL_ARGUMENT）** 拒绝，参数序列化还差最后一点（已按 NDK 的 size-prefixed parcelable、无 presence 调整参数与令牌；`optional<HardwareAuthToken>` 的写法仍待对齐）；
+- 无头探针（开机 20s 自动跑 convert/begin/abort）已加入调试版，不再需要点屏测试；pstore 可直接读结果。
+- 设备上 `libbinder_ndk`：**v33（/system/lib64）正常**，v35（/mnt/system）会挂起；因此后续 C 侧对照要用 v33。

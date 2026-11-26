@@ -288,3 +288,15 @@
 - `begin` 仍被服务端以 **-22（EX_ILLEGAL_ARGUMENT）** 拒绝，参数序列化还差最后一点（已按 NDK 的 size-prefixed parcelable、无 presence 调整参数与令牌；`optional<HardwareAuthToken>` 的写法仍待对齐）；
 - 无头探针（开机 20s 自动跑 convert/begin/abort）已加入调试版，不再需要点屏测试；pstore 可直接读结果。
 - 设备上 `libbinder_ndk`：**v33（/system/lib64）正常**，v35（/mnt/system）会挂起；因此后续 C 侧对照要用 v33。
+
+## 25. 解密打通：KeyMint 的 AIDL 报文格式（已解决）
+
+最终可用组合：
+1. **RECO 头 + 接口令牌**（0x5245434F "RECO"；logd 证实接收端 `Expecting header 0x5245434f`）。
+2. 结构化 parcelable 用 **C++ 风格**：可空结构前写 presence=1、再写 size；`KeyParameter`/`Timestamp`/`HardwareAuthToken` 同理。
+3. `byte[]` 在 Parcel 中 **4 字节对齐**。
+4. 可空 `HardwareAuthToken` 用 presence 0/1。
+
+结果：无头探针中 `convertStorageKeyToEphemeral` 与 `begin/abort` 都进入 TEE（假 key 得到 KeyMint 业务错误 -33）；真实 PIN 下 Skyward 成功解密并挂载 `/data`（dm-9，f2fs rw），文件管理可浏览。
+
+同时确认：**v33 的 /system/lib64/libbinder_ndk 在 recovery 可用，v35 会挂起**（因此 HAL 都使用 recovery 自带库）。

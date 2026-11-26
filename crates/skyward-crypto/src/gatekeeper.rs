@@ -51,7 +51,7 @@ const NOTE_LENGTH: std::ops::Range<usize> = 16..20;
 /// recognises in `slot`. Nothing asked for the note, so it answers no
 /// challenge.
 fn ask(slot: u32, enrolled: &[u8], password: &[u8]) -> Parcel {
-    let mut call = Parcel::call_bare(INTERFACE);
+    let mut call = Parcel::call_none(INTERFACE);
     call.i32(slot as i32);
     call.i64(0);
     call.blob(enrolled);

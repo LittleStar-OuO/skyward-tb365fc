@@ -134,7 +134,7 @@ impl<'a> KeyMint<'a> {
     }
 
     pub fn hardware(&self) -> Result<Hardware> {
-        let reply = self.device.transact(GET_HARDWARE_INFO, &Parcel::call_bare(DEVICE)).context("ask the key service about itself")?;
+        let reply = self.device.transact(GET_HARDWARE_INFO, &Parcel::call_none(DEVICE)).context("ask the key service about itself")?;
         let mut read = reply.read();
         status::ok(&mut read).context("ask the key service about itself")?;
         let end = read.structure()?;
@@ -167,7 +167,7 @@ impl<'a> KeyMint<'a> {
     }
 
     fn convert(&self, key: &[u8]) -> Result<Vec<u8>> {
-        let mut call = Parcel::call_bare(DEVICE);
+        let mut call = Parcel::call_none(DEVICE);
         call.blob(key);
         let reply = self.device.transact(CONVERT_STORAGE_KEY, &call).context("make a storage key for this start")?;
         let mut read = reply.read();
@@ -178,7 +178,7 @@ impl<'a> KeyMint<'a> {
     /// What the key service says a key may be used for: each entry is a tag
     /// and the number or length that came with it.
     pub fn authorizations(&self, key_blob: &[u8], app_id: &[u8]) -> Result<Vec<(i32, i64)>> {
-        let mut call = Parcel::call_bare(DEVICE);
+        let mut call = Parcel::call_none(DEVICE);
         call.blob(key_blob);
         call.blob(app_id);
         call.blob(&[]);
@@ -255,7 +255,7 @@ impl<'a> KeyMint<'a> {
 
     /// Open a decryption with the key service and keep hold of it.
     fn begin(&self, key_blob: &[u8], app_id: &[u8], nonce: &[u8], note: Option<&Token>) -> Result<Handle<'a>> {
-        let mut call = Parcel::call_bare(DEVICE);
+        let mut call = Parcel::call_none(DEVICE);
         call.i32(PURPOSE_DECRYPT);
         call.blob(key_blob);
         Self::gcm_params(&mut call, app_id, nonce);
@@ -289,7 +289,7 @@ impl<'a> KeyMint<'a> {
     /// build. What it is bound to has to be given again, as `params` write
     /// it, or the service cannot tell it is the right key.
     fn upgrade(&self, key_blob: &[u8], params: impl FnOnce(&mut Parcel)) -> Result<Vec<u8>> {
-        let mut call = Parcel::call_bare(DEVICE);
+        let mut call = Parcel::call_none(DEVICE);
         call.blob(key_blob);
         params(&mut call);
         let reply = self.device.transact(UPGRADE_KEY, &call).context("renew the key")?;
@@ -299,7 +299,7 @@ impl<'a> KeyMint<'a> {
     }
 
     fn update(&self, operation: &Handle, input: &[u8]) -> Result<Vec<u8>> {
-        let mut call = Parcel::call_bare(OPERATION);
+        let mut call = Parcel::call_none(OPERATION);
         call.blob(input);
         call.none();
         call.none();
@@ -310,7 +310,7 @@ impl<'a> KeyMint<'a> {
     }
 
     fn finish(&self, operation: &Handle) -> Result<Vec<u8>> {
-        let mut call = Parcel::call_bare(OPERATION);
+        let mut call = Parcel::call_none(OPERATION);
         call.opt_blob(None);
         call.opt_blob(None);
         call.none();
@@ -323,7 +323,7 @@ impl<'a> KeyMint<'a> {
     }
 
     fn abort(&self, operation: &Handle) -> Result<()> {
-        let reply = operation.transact(ABORT, &Parcel::call_bare(OPERATION)).context("drop the decryption")?;
+        let reply = operation.transact(ABORT, &Parcel::call_none(OPERATION)).context("drop the decryption")?;
         status::ok(&mut reply.read()).context("drop the decryption")
     }
 

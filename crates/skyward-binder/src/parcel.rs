@@ -83,6 +83,12 @@ impl Parcel {
         Parcel::call_with(interface, 0x5245_434F)
     }
 
+    /// A call to a service of the newer kind: its parcel opens with the
+    /// arguments themselves, the interface token being the driver's.
+    pub fn call_none(_interface: &str) -> Parcel {
+        Parcel::default()
+    }
+
     /// A call whose parcel opens with the given words, then the interface
     /// name: the words libbinder writes ahead of an interface token differ
     /// between its builds.

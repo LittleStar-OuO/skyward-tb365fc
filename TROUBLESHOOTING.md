@@ -276,3 +276,9 @@
 - KeyMint beanpod 是 **AIDL NDK 后端**（NEEDED `libbinder_ndk.so`，接口库 `-V2-ndk.so`），事务码已核对：`begin = 10`、`getHardwareInfo = 1`、`upgradeKey = 6`、`convertStorageKeyToEphemeral = 13`、`getKeyCharacteristics = 14`，与 Skyward 常量一致。
 - NDK 的 `AParcel_writeString` 反汇编确认为 `int32 UTF-16 单元数 + 单元 + NUL`，与 Skyward `string()` 相同；`AIBinder_transact` 的接口令牌布局仍与 Skyward 的裸事务存在差异，`begin` 仍返回 `EX_TRANSACTION_FAILED (-2147483647)`。
 - 下一步建议：为 KeyMint 写一个 **libbinder_ndk C shim**（`AServiceManager_getService` + `AIBinder_prepareTransaction`/`AParcel_write*`/`AIBinder_transact`），由 Rust 通过 FFI 调用；或按参考树改走 **keystore2 + vold**。
+
+**续 2**：用 libbinder_ndk 真机对照，得到关键结论：
+- v35（/mnt/system）的 libbinder_ndk 在 recovery 里 `AServiceManager_checkService` 会**挂起**；
+- **recovery 自带 v33 的 libbinder_ndk 工作正常**，能查到 KeyMint（`FOUND`），且与开机时 health/KeyMint 注册用的库一致；
+- KeyMint V2 的 `BpKeyMintDevice::begin` 反汇编显示 `AIBinder_prepareTransaction` 后**直接写参数**（无接口令牌）；`begin` 失败更可能在 **KeyParameter/byteArray 的序列化细节**（AIDL NDK 的数组/可分段编码与 Skyward 现有 C++ 风格布局的差异）。
+- 下一步：使用 **v33 libbinder_ndk 的 AParcel C API** 写一个 KeyMint C shim（getHardwareInfo/begin/update/finish/abort），Rust 通过 FFI 调用；或继续逐项对齐 begin 的参数编码。

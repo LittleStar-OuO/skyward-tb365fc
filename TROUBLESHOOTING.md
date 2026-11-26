@@ -254,3 +254,12 @@
 - 他们直接以 recovery 域跑原版 `servicemanager`/`keystore2`；本移植由 Skyward 直接调用 KeyMint。
 
 **当前状态**：dec67 开机四件套（TEE/KeyMint/Gatekeeper/hwsvc）全部正常；仅剩 Skyward 对 stock recovery servicemanager 的 AIDL 方法编号/令牌仍不匹配，继续用 1..12 全码探测定位。
+
+**续（同一天）**：进一步实测表明：
+- 对 stock recovery servicemanager 的 **方法码 1–12 × 9 种 parcel 头部布局（含 SYST 两种字节序、0x40/-1、无头）** 全部返回 `EX_TRANSACTION_FAILED (-2147483647)`；即它每次都有回包但一律以异常拒绝，方法编号并非原因。
+- 自写的 `libbinder_ndk` 小客户端在同一时刻 `AServiceManager_checkService` 会**阻塞**（10s 超时），说明该目录对新客户端也不响应；而开机时 libbinder 的 addService（health、KeyMint）是成功的（`vendor.soter.teei.km.init=finish`）。
+- 用 v35 的完整 servicemanager 替换后，KeyMint 反而 `addService` 失败（`Check failed: status == STATUS_OK`），说明 VINTF/目录语义又不同。
+
+**结论**：基础 recovery 与整套 TEE/KeyMint/Gatekeeper/hwservicemanager 已稳定；decrypt 最后一步卡在 **Skyward 的裸 binder 客户端与该 recovery 目录的 AIDL 互操作**。下一步两条路线：
+1) 按参考 TB336ZA 的做法改走 **keystore2 + vold in-process**（服务全部 recovery 域，目录用完整实现）；
+2) 让 Skyward 的 service 查找改用 **libbinder_ndk**（需引入其 NDK API 与 KeyMint AIDL 头）或修正 parcel/事务细节。

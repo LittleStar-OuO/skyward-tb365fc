@@ -63,13 +63,11 @@ enum Value<'a> {
 }
 
 fn parameter(p: &mut Parcel, tag: i32, value: Value) {
-    // A parameter is a parcelable of its own: a length, then the tag and
-    // the value, which is a parcelable of its own as well.
+    p.i32(1);
     let start = p.here();
     p.i32(0);
     p.i32(tag);
-    let vstart = p.here();
-    p.i32(0);
+    p.i32(1);
     match value {
         Value::Enum(arm, v) => {
             p.i32(arm);
@@ -84,8 +82,6 @@ fn parameter(p: &mut Parcel, tag: i32, value: Value) {
             p.blob(v);
         }
     }
-    let vsize = (p.here() - vstart) as i32;
-    p.fill(vstart, vsize);
     let size = (p.here() - start) as i32;
     p.fill(start, size);
 }
@@ -93,255 +89,14 @@ fn parameter(p: &mut Parcel, tag: i32, value: Value) {
 /// Hand over the note the secure world wrote when the user answered their
 /// screen lock. A key guarded by the screen lock is refused without it.
 fn vouched(p: &mut Parcel, note: &Token) {
+    p.i32(1);
     let start = p.here();
     p.i32(0);
     p.i64(note.challenge);
     p.i64(note.user);
     p.i64(note.authenticator);
     p.i32(note.kind);
-    let when = p.here();
-    p.i32(0);
-    p.i64(note.when);
-    let wsize = (p.here() - when) as i32;
-    p.fill(when, wsize);
-    p.blob(&note.mac);
-    let size = (p.here() - start) as i32;
-    p.fill(start, size);
-}
-
-/// What the phone says about its key hardware.
-pub struct Hardware {
-    pub version: i32,
-    pub security_level: i32,
-    pub name: String,
-    pub author: String,
-}
-
-/// The phone's key service, as this program talks to it.
-pub struct KeyMint<'a> {
-    device: Handle<'a>,
-}
-
-impl<'a> KeyMint<'a> {
-    /// Reach the running key service, or say that none is.
-    pub fn open(binder: &'a Binder) -> Result<KeyMint<'a>> {
-        let device = service::find(binder, SERVICE)?
-            .with_context(|| format!("{SERVICE} is not running; the phone's key service has to be started first"))?;
-        Ok(KeyMint { device })
-    }
-
-    pub fn hardware(&self) -> Result<Hardware> {
-        let reply = self.device.transact(GET_HARDWARE_INFO, &Parcel::call_recovery(DEVICE)).context("ask the key service about itself")?;
-        let mut read = reply.read();
-        status::ok(&mut read).context("ask the key service about itself")?;
-        let end = read.structure()?;
-        let info = Hardware {
-            version: read.i32()?,
-            security_level: read.i32()?,
-            name: read.string()?,
-            author: read.string()?,
-        };
-        read.go(end)?;
-        Ok(info)
-    }
-
-    /// Turn a key that only the storage hardware can use into the form it
-    /// takes for this start of the phone. The key itself never leaves the
-    /// secure world: what comes back is wrapped again, for the hardware to
-    /// unwrap as it reads and writes.
-    pub fn ephemeral_storage_key(&self, key: &[u8]) -> Result<Vec<u8>> {
-        match self.convert(key) {
-            Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) => {
-                // As with a key that decrypts, the key is renewed for the
-                // firmware running now, as Android's keystore2 renews one
-                // for vold, and the one on disk is left as it is. A storage
-                // key is bound to nothing that has to be given again.
-                let renewed = self.upgrade(key, |call| call.i32(0)).context("renew the storage key for the firmware running now")?;
-                self.convert(&renewed)
-            }
-            converted => converted,
-        }
-    }
-
-    fn convert(&self, key: &[u8]) -> Result<Vec<u8>> {
-        let mut call = Parcel::call_recovery(DEVICE);
-        call.blob(key);
-        let reply = self.device.transact(CONVERT_STORAGE_KEY, &call).context("make a storage key for this start")?;
-        let mut read = reply.read();
-        status::ok(&mut read).context("make a storage key for this start")?;
-        read.blob().context("read the storage key")
-    }
-
-    /// What the key service says a key may be used for: each entry is a tag
-    /// and the number or length that came with it.
-    pub fn authorizations(&self, key_blob: &[u8], app_id: &[u8]) -> Result<Vec<(i32, i64)>> {
-        let mut call = Parcel::call_recovery(DEVICE);
-        call.blob(key_blob);
-        call.blob(app_id);
-        call.blob(&[]);
-        let reply = self.device.transact(GET_KEY_CHARACTERISTICS, &call).context("ask what the key may be used for")?;
-        let mut read = reply.read();
-        status::ok(&mut read).context("ask what the key may be used for")?;
-        let mut out = Vec::new();
-        for _ in 0..read.i32()?.max(0) {
-            let end = read.structure()?;
-            read.i32().context("read which part of the phone holds the key")?;
-            for _ in 0..read.i32()?.max(0) {
-                let next = read.structure()?;
-                let tag = read.i32()?;
-                read.i32().context("read whether the tag has a value")?;
-                read.i32().context("read which arm of the value is set")?;
-                let value = match tag & TAG_KIND {
-                    KIND_ULONG | KIND_ULONG_REP | KIND_DATE => read.i64()?,
-                    KIND_BYTES | KIND_BIGNUM => read.blob()?.len() as i64,
-                    _ => read.i32()? as i64,
-                };
-                out.push((tag, value));
-                read.go(next)?;
-            }
-            read.go(end)?;
-        }
-        Ok(out)
-    }
-
-    /// Undo an AES-GCM encryption the key service did with `key_blob`. The
-    /// service only hands back the plaintext when `app_id` is the one the
-    /// key was made for, so a wrong secret fails here rather than yielding
-    /// something that looks like a key. A key guarded by a screen lock
-    /// takes the note the secure world wrote when it was answered.
-    pub fn gcm_decrypt(&self, key_blob: &[u8], app_id: &[u8], nonce: &[u8], body: &[u8], note: Option<&Token>) -> Result<Vec<u8>> {
-        let operation = match self.begin(key_blob, app_id, nonce, note) {
-            Ok(operation) => operation,
-            Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) => {
-                // The phone's firmware has moved on since this key was
-                // made. Renewing it gives a key for the firmware running
-                // now; the one on disk is left as it is, so nothing of the
-                // phone's own is changed by reading it here.
-                let renewed = self
-                    .upgrade(key_blob, |call| Self::gcm_params(call, app_id, nonce))
-                    .context("renew the key for the firmware running now")?;
-                self.begin(&renewed, app_id, nonce, note)?
-            }
-            Err(e) => return Err(e),
-        };
-        let mut out = self.update(&operation, body)?;
-        out.extend_from_slice(&self.finish(&operation)?);
-        Ok(out)
-    }
-
-    /// What the key service has to be told to use an AES-GCM key: how it is
-    /// used, how long its tag is, what it is bound to, and the nonce it was
-    /// encrypted under.
-    ///
-    /// What a key is bound to is named only where there is something: the
-    /// secure world folds the binding into the key it unwraps the key blob
-    /// with, and a binding to nothing named is not the same to it as none
-    /// named at all, so naming an empty one leaves it unable to unwrap a
-    /// key that was made bound to nothing.
-    fn gcm_params(call: &mut Parcel, _app_id: &[u8], _nonce: &[u8]) {
-        call.i32(0);
-    }
-rate::token::Token;
-use anyhow::{Context, Result};
-use skyward_binder::driver::{Binder, Handle};
-use skyward_binder::parcel::Parcel;
-use skyward_binder::{service, status};
-
-/// The phone's own key service, the only thing that can use a key the
-/// hardware wrapped.
-pub const SERVICE: &str = "android.hardware.security.keymint.IKeyMintDevice/default";
-
-const DEVICE: &str = "android.hardware.security.keymint.IKeyMintDevice";
-const OPERATION: &str = "android.hardware.security.keymint.IKeyMintOperation";
-
-const GET_HARDWARE_INFO: u32 = 1;
-const UPGRADE_KEY: u32 = 6;
-const CONVERT_STORAGE_KEY: u32 = 13;
-const GET_KEY_CHARACTERISTICS: u32 = 14;
-const BEGIN: u32 = 10;
-
-/// The top of a tag says what kind of value it carries.
-const TAG_KIND: i32 = -268_435_456;
-const KIND_ULONG: i32 = 1_342_177_280;
-const KIND_ULONG_REP: i32 = -1_610_612_736;
-const KIND_DATE: i32 = 1_610_612_736;
-const KIND_BYTES: i32 = -1_879_048_192;
-const KIND_BIGNUM: i32 = -2_147_483_648;
-const UPDATE: u32 = 2;
-const FINISH: u32 = 3;
-const ABORT: u32 = 4;
-
-/// How long the nonce of an AES-GCM key is here.
-const NONCE_BYTES: usize = 12;
-
-/// The key service's way of saying the key was made under an older build of
-/// the phone's own firmware and has to be renewed before it will be used.
-const KEY_REQUIRES_UPGRADE: i32 = -62;
-
-const PURPOSE_DECRYPT: i32 = 1;
-const BLOCK_MODE_GCM: i32 = 32;
-const PADDING_NONE: i32 = 1;
-
-/// What a key parameter is tagged with. The high bits say which kind of
-/// value follows, which is why the numbers look arbitrary.
-const TAG_PURPOSE: i32 = 536_870_913;
-const TAG_BLOCK_MODE: i32 = 536_870_916;
-const TAG_PADDING: i32 = 536_870_918;
-const TAG_MAC_LENGTH: i32 = 805_307_371;
-const TAG_APPLICATION_ID: i32 = -1_879_047_591;
-const TAG_NONCE: i32 = -1_879_047_191;
-
-/// Which arm of a parameter's value is used.
-const VALUE_PADDING_MODE: i32 = 3;
-const VALUE_KEY_PURPOSE: i32 = 7;
-const VALUE_INTEGER: i32 = 11;
-const VALUE_BLOB: i32 = 14;
-const VALUE_BLOCK_MODE: i32 = 2;
-
-/// The tag's value and which arm it is written as.
-enum Value<'a> {
-    Enum(i32, i32),
-    Integer(i32),
-    Blob(&'a [u8]),
-}
-
-fn parameter(p: &mut Parcel, tag: i32, value: Value) {
-    // A parameter is a parcelable of its own: a length, then the tag and
-    // the value, which is a parcelable of its own as well.
-    let start = p.here();
-    p.i32(0);
-    p.i32(tag);
-    let vstart = p.here();
-    p.i32(0);
-    match value {
-        Value::Enum(arm, v) => {
-            p.i32(arm);
-            p.i32(v);
-        }
-        Value::Integer(v) => {
-            p.i32(VALUE_INTEGER);
-            p.i32(v);
-        }
-        Value::Blob(v) => {
-            p.i32(VALUE_BLOB);
-            p.blob(v);
-        }
-    }
-    let vsize = (p.here() - vstart) as i32;
-    p.fill(vstart, vsize);
-    let size = (p.here() - start) as i32;
-    p.fill(start, size);
-}
-
-/// Hand over the note the secure world wrote when the user answered their
-/// screen lock. A key guarded by the screen lock is refused without it.
-fn vouched(p: &mut Parcel, note: &Token) {
-    let start = p.here();
-    p.i32(0);
-    p.i64(note.challenge);
-    p.i64(note.user);
-    p.i64(note.authenticator);
-    p.i32(note.kind);
+    p.i32(1);
     let when = p.here();
     p.i32(0);
     p.i64(note.when);
@@ -512,15 +267,12 @@ impl<'a> KeyMint<'a> {
         let reply = self.device.transact(BEGIN, &call).context("start a decryption")?;
         let mut read = reply.read();
         status::ok(&mut read).context("start a decryption")?;
-        let at = read.here();
-        let size = read.i32().context("read how long the answer is")?;
-        let end = at + size as usize;
+        read.structure().context("read what the key service answered")?;
         read.i64().context("read the decryption's challenge")?;
         let params = read.i32().context("read how many parameters the decryption came back with")?;
         for _ in 0..params.max(0) {
-            let pat = read.here();
-            let psize = read.i32().context("read how long a parameter is")?;
-            read.go(pat + psize as usize)?;
+            let end = read.structure().context("read a parameter the decryption came back with")?;
+            read.go(end)?;
         }
         match read.object().context("read the decryption the key service opened")? {
             Some(h) => Handle::hold(reply.binder(), h),

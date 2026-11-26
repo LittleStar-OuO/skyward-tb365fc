@@ -263,3 +263,16 @@
 **结论**：基础 recovery 与整套 TEE/KeyMint/Gatekeeper/hwservicemanager 已稳定；decrypt 最后一步卡在 **Skyward 的裸 binder 客户端与该 recovery 目录的 AIDL 互操作**。下一步两条路线：
 1) 按参考 TB336ZA 的做法改走 **keystore2 + vold in-process**（服务全部 recovery 域，目录用完整实现）；
 2) 让 Skyward 的 service 查找改用 **libbinder_ndk**（需引入其 NDK API 与 KeyMint AIDL 头）或修正 parcel/事务细节。
+
+## 23. USB/adb 消失的两个真正原因（已修）
+
+1. **重复的 adb 绑定动作**：stock `init.rc` 与 `skyward-mtp.rc` 各有一段 `on property:sys.usb.config=adb && ffs.ready && configfs` 动作，互相写 UDC 造成 gadget 反复重绑（内核日志可见 pullup D-/D+ 约 10Hz 跳动），Windows 永远枚举不出设备。删除 `skyward-mtp.rc` 里的 adb-only 绑定段即可。
+2. **packer 的 include_bytes 陈旧**：`tools/skyward-pack` 是手工拷贝的旧二进制，`wsl_build.sh` 不更新它，导致改了 `mtp.rc` 也不会进镜像。修法：构建后 `cp target/release/skyward-pack tools/`（本次已做），或让脚本自动拷贝。
+
+现在 USB 由 `zz-tb365-usb.rc` 在 `on boot` 启动 adbd、在 `sys.usb.ffs.ready=1 && tb365.usb.bound=0` 时一次性绑定 adb，Skyward 的 `usb::set/switch` 全为空操作，端口不再被改动；实测 `tb365.usb.bound=1`、`sys.usb.state=adb` 稳定。
+
+## 24. KeyMint AIDL 的最后互操作细节（进行中）
+
+- KeyMint beanpod 是 **AIDL NDK 后端**（NEEDED `libbinder_ndk.so`，接口库 `-V2-ndk.so`），事务码已核对：`begin = 10`、`getHardwareInfo = 1`、`upgradeKey = 6`、`convertStorageKeyToEphemeral = 13`、`getKeyCharacteristics = 14`，与 Skyward 常量一致。
+- NDK 的 `AParcel_writeString` 反汇编确认为 `int32 UTF-16 单元数 + 单元 + NUL`，与 Skyward `string()` 相同；`AIBinder_transact` 的接口令牌布局仍与 Skyward 的裸事务存在差异，`begin` 仍返回 `EX_TRANSACTION_FAILED (-2147483647)`。
+- 下一步建议：为 KeyMint 写一个 **libbinder_ndk C shim**（`AServiceManager_getService` + `AIBinder_prepareTransaction`/`AParcel_write*`/`AIBinder_transact`），由 Rust 通过 FFI 调用；或按参考树改走 **keystore2 + vold**。

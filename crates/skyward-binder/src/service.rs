@@ -87,7 +87,7 @@ const INTERFACE_VERSION: u32 = 0x00ff_ffff;
 #[cfg(target_os = "android")]
 pub fn version(service: &crate::driver::Handle, interface: &str) -> Result<i32> {
     let what = format!("ask which version of {interface} is served");
-    let reply = service.transact(INTERFACE_VERSION, &Parcel::call(interface)).with_context(|| what.clone())?;
+    let reply = service.transact(INTERFACE_VERSION, &Parcel::call_bare(interface)).with_context(|| what.clone())?;
     let mut read = reply.read();
     status::ok(&mut read).with_context(|| what.clone())?;
     read.i32().with_context(|| what)
@@ -98,21 +98,25 @@ pub fn version(service: &crate::driver::Handle, interface: &str) -> Result<i32> 
 #[cfg(target_os = "android")]
 pub fn find<'a>(binder: &'a crate::driver::Binder, name: &str) -> Result<Option<crate::driver::Handle<'a>>> {
     let directory = binder.directory()?;
-    let mut tries = vec![variants()[0].check_service, variants()[1].check_service, 1, 2, 3, 4];
+    let mut tries = vec![variants()[0].check_service, variants()[1].check_service];
+    tries.extend(1..=6);
     tries.sort_unstable();
     tries.dedup();
-    for bare in [false, true] {
+    for (layout, recovery) in [true, false].into_iter().enumerate() {
         for &method in &tries {
-            let mut call = match bare {
-                true => Parcel::call_bare(DIRECTORY),
-                false => Parcel::call(DIRECTORY),
+            let mut call = match recovery {
+                true => Parcel::call_recovery(DIRECTORY),
+                false => Parcel::call_bare(DIRECTORY),
             };
             call.string(name);
-            let Ok(reply) = directory.transact(method, &call) else { continue };
+            let reply = match directory.transact(method, &call) {
+                Ok(reply) => reply,
+                Err(e) => { eprintln!("look up {name}: recovery={recovery} method {method}: {e:#}"); continue; }
+            };
             let mut read = reply.read();
-            if status::ok(&mut read).is_err() {
-                continue;
-            }
+            if let Err(e) = status::ok(&mut read) { eprintln!("look up {name}: recovery={recovery} method {method}: {e:#}"); continue; }
+            eprintln!("look up {name}: recovery={recovery} method {method}: answered");
+            let _ = layout;
             match read.object().with_context(|| format!("read what the directory answered for {name}"))? {
                 Some(handle) => return Ok(Some(crate::driver::Handle::hold(binder, handle)?)),
                 None => return Ok(None),
@@ -134,7 +138,7 @@ pub fn add(binder: &crate::driver::Binder, name: &str, number: u64) -> Result<()
         for m in methods {
             let mut call = match bare {
                 true => Parcel::call_bare(DIRECTORY),
-                false => Parcel::call(DIRECTORY),
+                false => Parcel::call_bare(DIRECTORY),
             };
             call.string(name);
             call.object(number);
@@ -159,7 +163,7 @@ pub fn names(binder: &crate::driver::Binder) -> Result<Vec<String>> {
         for m in methods {
             let mut call = match bare {
                 true => Parcel::call_bare(DIRECTORY),
-                false => Parcel::call(DIRECTORY),
+                false => Parcel::call_bare(DIRECTORY),
             };
             call.i32(DUMP_PRIORITY_ALL);
             let Ok(reply) = directory.transact(m.list_services, &call) else { continue };
@@ -202,7 +206,7 @@ pub fn declared(binder: &crate::driver::Binder, name: &str) -> Result<bool> {
         for m in methods {
             let mut call = match bare {
                 true => Parcel::call_bare(DIRECTORY),
-                false => Parcel::call(DIRECTORY),
+                false => Parcel::call_bare(DIRECTORY),
             };
             call.string(name);
             let Ok(reply) = directory.transact(m.is_declared, &call) else { continue };

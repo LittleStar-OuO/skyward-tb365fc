@@ -43,7 +43,7 @@ fn parameters(read: &mut Reader) -> Result<Parameters> {
 /// The call that tells a part of the secure world what every part brought,
 /// so it can work out the key from all of them.
 fn ask_compute(all: &[Parameters]) -> Parcel {
-    let mut call = Parcel::call(INTERFACE);
+    let mut call = Parcel::call_bare(INTERFACE);
     call.i32(all.len() as i32);
     for p in all {
         // Each is a structure of its own: that it is there, how long it is,
@@ -85,7 +85,7 @@ impl<'a> SharedSecret<'a> {
     pub fn parameters(&self) -> Result<Parameters> {
         let reply = self
             .device
-            .transact(GET_PARAMETERS, &Parcel::call(INTERFACE))
+            .transact(GET_PARAMETERS, &Parcel::call_bare(INTERFACE))
             .context("ask what the secure world brings to the agreement")?;
         parameters(&mut reply.read())
     }

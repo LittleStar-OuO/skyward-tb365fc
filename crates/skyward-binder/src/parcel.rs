@@ -77,6 +77,24 @@ impl Parcel {
         Parcel::call_with(interface, HEADER_SYSTEM)
     }
 
+    /// A call the recovery's own libbinder writes: its header carries the
+    /// recovery mark, which the recovery's servicemanager checks for.
+    pub fn call_recovery(interface: &str) -> Parcel {
+        Parcel::call_with(interface, 0x5245_434F)
+    }
+
+    /// A call whose parcel opens with the given words, then the interface
+    /// name: the words libbinder writes ahead of an interface token differ
+    /// between its builds.
+    pub fn call_prefix(interface: &str, prefix: &[i32]) -> Parcel {
+        let mut p = Parcel::default();
+        for word in prefix {
+            p.i32(*word);
+        }
+        p.string(interface);
+        p
+    }
+
     /// A call whose parcel opens with the interface name alone, as the C++
     /// libbinder of an older recovery writes it.
     pub fn call_bare(interface: &str) -> Parcel {

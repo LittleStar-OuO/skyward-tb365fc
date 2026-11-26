@@ -39,7 +39,7 @@ pub struct Config {
 
 /// The call that asks the weaver about itself.
 fn ask_config() -> Parcel {
-    Parcel::call(INTERFACE)
+    Parcel::call_bare(INTERFACE)
 }
 
 /// What the weaver answered about itself.
@@ -58,7 +58,7 @@ fn config(read: &mut Reader) -> Result<Config> {
 
 /// The call that asks `slot` for its value behind `key`.
 fn ask_value(slot: u32, key: &[u8]) -> Parcel {
-    let mut call = Parcel::call(INTERFACE);
+    let mut call = Parcel::call_bare(INTERFACE);
     call.i32(slot as i32);
     call.blob(key);
     call

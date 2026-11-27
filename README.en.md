@@ -64,10 +64,10 @@ Third-party recovery ported from [kirklin/skyward](https://github.com/kirklin/sk
 | Device info card | √ | model, SoC, RAM, panel, storage, OS version and battery are shown |
 | Reboot to system / recovery | √ | both directions verified |
 | Normal Android boot | √ | the system still boots with this vendor_boot |
-| Install (zip / partition image) | × | not verified yet |
+| Install (zip / partition image) | × | to be verified |
 | Backup | √ | full-partition backup to `/data/media/0/Skyward/backups/<stamp>` with per-item SHA-256; 19 GB / 21 items verified on 2026-11-28 |
 | Restore | √ | full restore including data/media verified on 2026-11-28 (`backup restored, all but []`) |
-| Dual boot | × | not verified |
+| Dual boot | × | to be verified |
 | MTP | √ | starts automatically (`auto_transfer`); large files copied both ways with matching MD5. MTU3 caps an endpoint request at 65532 bytes, so MTP uses 65024-byte (127×512) chunks |
 | `adb shell` in recovery | √ | adbd runs in the `su` domain; root shell works |
 | adb root in recovery | √ | adbd/su/shell are permissive under the debug policy; `adb shell id` is root |
@@ -180,6 +180,6 @@ The Chinese README keeps the full chronological log of every blocker, symptom, c
 
 - [kirklin/skyward](https://github.com/kirklin/skyward): Skyward itself
 - [BkaNeko/xaga-skyward](https://github.com/BkaNeko/xaga-skyward): MTK, vendor_boot, portrait and driver adaptation reference
-- Coolapk porting notes (realme X7 Pro Ultra) and Skyward upstream PR #83 for black-screen debugging
+- [Coolapk @黑橘火龙果's porting notes](https://www.coolapk.com/feed/75132513?s=ODQxYjkxOWQxZmQwMzhnNmIwOWUyYmF6a1591): realme X7 Pro Ultra and Skyward upstream PR #83 (black-screen debugging)
 
-This is an unofficial personal port, not affiliated with Lenovo, Xiaomi or the upstream authors. Flashing is at your own risk; back up first and verify the model and firmware match.
+This repository is an unofficial port. Flashing is at your own risk; back up first and verify the model and firmware match.

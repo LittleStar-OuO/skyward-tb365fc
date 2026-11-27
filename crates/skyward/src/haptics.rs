@@ -32,10 +32,12 @@ const TICKS_REST: Duration = Duration::from_millis(40);
 /// How long a click plays on a motor driven through an LED, at the
 /// lightest and at the strongest setting: the regulator drives the motor at
 /// one strength, so the length is what the slider changes.
-const LED_CLICK: (u32, u32) = (8, 28);
+const LED_CLICK: (u32, u32) = (20, 60);
 
-/// How long the ticks of the screen going off play on such a motor.
-const LED_TICKS: u32 = 24;
+/// How long the ticks of the screen going off play on such a motor. The
+/// regulator takes a moment to spin the motor up, so a pulse short enough
+/// for a force-feedback motor is barely felt.
+const LED_TICKS: u32 = 40;
 
 /// The vibration motor, played through the kernel's force-feedback events
 /// or, on a phone whose motor is an LED, through the LED's transient
@@ -83,6 +85,7 @@ impl Led {
         for attr in ["duration", "activate"] {
             ensure!(dir.join(attr).is_file(), "{} has no {attr} to play a pulse with", dir.display());
         }
+        let _ = skyward_sys::kmsg(&format!("the motor plays through {}", dir.display()));
         Ok(Led { dir: dir.to_path_buf(), strength })
     }
 

@@ -393,6 +393,6 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 3. `echo 1 > activate` —— 驱动打开 regulator，到时自动关闭（dmesg：`vibr_enable` / `vibr_disable`）。
    只写 `state=1` 不会启动；`activate=1` 才是单次脉冲。
 
-**Skyward 集成**：`[haptics]` 新增 `led = "/sys/class/leds/vibrator"`，`resonance` 变为可选。点击把力度滑块映射到 8–28 ms，息屏提示固定 24 ms；不需要共振频率，也没有振幅控制（regulator 只有开/关）。`haptic` CLI（用改名副本运行）可直接验证。
+**Skyward 集成**：`[haptics]` 新增 `led = "/sys/class/leds/vibrator"`，`resonance` 变为可选。点击把力度滑块映射到 20–60 ms（regulator 马达起转慢，短脉冲几乎感觉不到），息屏提示固定 40 ms；不需要共振频率，也没有振幅控制（regulator 只有开/关）。另外 UI 原本只在返回手势/滑条/按键时震动，现在普通点按命中项也会发 `Effect::Haptic`（运行时 `tap_haptics` 仅在马达成功打开时为真，UI 单测默认关闭）。`haptic` CLI（用改名副本运行）可直接验证。
 
 **验证**：CLI 输出 `played the click ... 14 ms long` / `played the ticks ... 24 ms long`，内核日志出现对应的 `vibr_enable`/`vibr_disable`。

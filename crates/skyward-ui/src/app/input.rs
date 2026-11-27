@@ -208,6 +208,12 @@ impl App {
                         p.lift(now);
                     }
                     fx.extend(self.act(a, now));
+                    // A tap that lands on something answers with a tap of
+                    // the motor, as the phone's own pages do, unless what it
+                    // does already plays one.
+                    if self.state.tap_haptics && self.state.vibrate && !fx.iter().any(|e| matches!(e, Effect::Haptic)) {
+                        fx.push(Effect::Haptic);
+                    }
                 }
                 Drag::Press { x, y, action: None, .. } if self.screen() == Screen::Editor => self.place_caret(f, x, y + scroll),
                 Drag::History { pitch, .. } => {
@@ -701,5 +707,15 @@ mod tests {
         app.touch(Touch::Move(40.0, 2100.0), &f, 32);
         app.touch(Touch::Up, &f, 40);
         assert_eq!(app.cue.as_ref().map(|c| c.1), Some(at), "it sinks back where it was");
+    }
+
+    #[test]
+    fn a_tap_with_a_motor_answers_with_a_tap_of_the_motor() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.tap_haptics = true;
+        let fx = tap_at(&mut app, &f, &i, Action::Open(Screen::Backup), 1000);
+        assert_eq!(fx, vec![Effect::Haptic], "the motor taps as the row's page opens");
+        assert_eq!(app.screen(), Screen::Backup, "and the page opens");
     }
 }

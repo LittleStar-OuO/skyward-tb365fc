@@ -64,10 +64,10 @@ fastboot flash vbmeta_a vbmeta_stock.img
 | 设备信息卡片 | √ | 型号、SoC、RAM、屏幕、存储、系统版本、电池等信息正常显示 |
 | 重启到系统 / recovery | √ | `adb reboot` / `adb reboot recovery` 往返验证 |
 | 正常 Android 启动不受影响 | √ | 刷着本 recovery 的 vendor_boot 时系统可正常启动 |
-| 安装（zip / 分区镜像） | × | 尚未验证 |
+| 安装（zip / 分区镜像） | × | 待验证 |
 | 备份 | √ | 全分区备份到 `/data/media/0/Skyward/backups/<时间>`，每项 SHA-256 校验；2026-11-28 实测 19 GB、21 项全部通过（boot/system/data/media/efs） |
 | 恢复 | √ | 全分区恢复完成（2026-11-28 实测，含 data/media）；日志 `backup restored, all but []`，界面显示“恢复完成” |
-| 双系统 | × | 尚未验证 |
+| 双系统 | × | 待验证 |
 | MTP（连接电脑） | √ | 开机自动后台启动（`auto_transfer`），Windows 可直接拖入/拖出；双向大文件按 MD5 校验一致。MTU3 单请求上限 65532 字节，MTP 块取 512 对齐的 65024 字节 |
 | recovery 内 `adb shell` | √ | adbd 以 `su` 域运行，root shell 可用 |
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
@@ -536,6 +536,6 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 
 - [kirklin/skyward](https://github.com/kirklin/skyward)：Skyward 本体
 - [BkaNeko/xaga-skyward](https://github.com/BkaNeko/xaga-skyward)：MTK / vendor_boot / 竖屏 / 驱动适配参考
-- 酷安移植经验（realme X7 Pro 至尊版）与 Skyward 上游 PR #83（黑屏排查思路）
+- [酷安@黑橘火龙果的移植经验](https://www.coolapk.com/feed/75132513?s=ODQxYjkxOWQxZmQwMzhnNmIwOWUyYmF6a1591)：realme X7 Pro 至尊版与 Skyward 上游 PR #83（黑屏排查思路）
 
-本移植为非官方个人项目，与联想、小米及原作者无关。刷机有风险，请自行备份并确认机型与固件匹配。
+本仓库为非官方移植项目，刷机有风险，请自行备份并确认机型与固件匹配。

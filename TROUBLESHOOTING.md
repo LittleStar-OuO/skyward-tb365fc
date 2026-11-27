@@ -233,8 +233,8 @@
 
 ## 当前状态
 
-- 已验证：显示、触摸、adb root/shell、MTP（开机自动启动、双向传输）、`/data` 静默解密、WiFi（开机自动连接、凭据持久化）、侧键/电源键导航。
-- 未验证/未完成：安装（zip/分区镜像）、备份/恢复、双系统、在线更新。
+- 已验证：显示、触摸、adb root/shell、MTP（开机自动启动、双向传输）、`/data` 静默解密、WiFi（开机自动连接、凭据持久化）、侧键/电源键导航、全分区备份（SHA-256 逐项校验）。
+- 未验证/未完成：安装（zip/分区镜像）、恢复、双系统、在线更新。
 
 ## 22. recovery 的 servicemanager 与 KeyMint 查找（已解决，见 25）
 
@@ -313,7 +313,7 @@
 3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
 4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
 
-**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；安装（zip/分区镜像）、备份/恢复、双系统、在线更新尚未验证或未配置。
+**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；安装（zip/分区镜像）、恢复、双系统、在线更新尚未验证或未配置。
 
 ## 29. WiFi 上电与 supplicant（已解决）
 

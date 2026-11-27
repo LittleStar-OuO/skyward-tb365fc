@@ -20,6 +20,11 @@ keys_from_init = true
 # it once, as xaga does.
 restart_service_directory = false
 
+[skyward]
+# Where Skyward's own releases are published, so the update page can ask
+# about a newer build for this phone.
+releases = "LittleStar-OuO/skyward-tb365fc"
+
 [display]
 # The 12.1-inch 2560 x 1600 panel, natural portrait; density as the running
 # system reports it (wm density 320).

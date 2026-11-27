@@ -69,7 +69,7 @@ fastboot flash vbmeta_a vbmeta_stock.img
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
 | /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
 | WiFi | √ | 开机自动上电（wmt_loader/wmt_launcher/wlan_assistant + `wlan0`），连接成功后的网络保存在 persist，重启自动连回；扫描/连接/ DHCP 已验证 |
-| 在线更新 Skyward | √ | 发布源 `LittleStar-OuO/skyward-tb365fc`；已从 0.5.2 在线更新到 v0.5.3 并写入 `vendor_boot_a`，重启验证通过 |
+| 在线更新 Skyward | × | 发布源已配置，但 GitHub Release 已清空，待重新发布 0.5.0 后可用 |
 | 侧键/电源键导航 | √ | 音量键/电源键导航已验证可用 |
 
 图例：√ 已验证可用；× 未完成/不可用。
@@ -118,16 +118,17 @@ target/release/skyward-pack recovery \
 
 `stock/vendor_boot.img` 为原厂 `TB365FC_ZUXOS_1.1.10.122` 刷机包中的 `vendor_boot.img`（整分区 64 MiB，末尾带 AVB footer）。产物应为 67,108,864 字节并以 `AVBf` 结尾。
 
-解密、WiFi、USB/crypto 包装与 VNDK 库由 `tools/pack_tb365fc.sh` 继续注入，再用 `tools/mkfooter.js` 写回 AVB footer；当前验证镜像为 `out/dec121.img`（0.5.3）：
+解密、WiFi、USB/crypto 包装与 VNDK 库由 `tools/pack_tb365fc.sh` 继续注入，再用 `tools/mkfooter.js` 写回 AVB footer；当前验证镜像为 `out/dec122.img`（0.5.0）：
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `dec121.img` | `9c8a0dd46db254e21bdbc0a0ce21ade073c6590c44cdb33b4a7107eea04fbc14` |
+| `dec122.img` | `ac5b9996c7552f512e54b8264a50ec9895aa46c446136e434faa58d475a050f0` |
 
 ## 已知问题
 
 - **安装（zip / 分区镜像）尚未验证**：入口可用，尚未在真机跑完整刷写与校验。
 - **双系统切换尚未验证**：本机为 A/B，但未建立第二系统并验证切换。
+- **在线更新暂不可用**：GitHub Release 已清空，更新页会提示查不到版本；重新发布后恢复。
 - vendor_boot 的 vendor ramdisk 同时用于正常启动；已验证不影响系统启动，但请保留原厂镜像以便回滚。
 
 ## 排查记录（Troubleshooting）

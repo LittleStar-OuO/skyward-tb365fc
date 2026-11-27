@@ -38,8 +38,6 @@ SP Flash Tool with the full stock package (Download Only, never Format All) is t
 
 ## Target device
 
-Third-party recovery ported from [kirklin/skyward](https://github.com/kirklin/skyward) and [BkaNeko/xaga-skyward](https://github.com/BkaNeko/xaga-skyward).
-
 | Item | Value |
 | --- | --- |
 | Device | Lenovo Xiaoxin Pad 12.1 2025 |
@@ -50,8 +48,6 @@ Third-party recovery ported from [kirklin/skyward](https://github.com/kirklin/sk
 | Display | 12.1" 2560×1600 90 Hz, density 320 |
 | Touch | Himax HX83122B (`himax-touchscreen`) |
 | Recovery | lives in **vendor_boot**; there is no recovery partition |
-
-> GPL-3.0-or-later. Skyward is by Kirk Lin; the MTK, vendor_boot and portrait changes come from BkaNeko's xaga fork.
 
 ## Status
 
@@ -73,7 +69,7 @@ Third-party recovery ported from [kirklin/skyward](https://github.com/kirklin/sk
 | adb root in recovery | √ | adbd/su/shell are permissive under the debug policy; `adb shell id` is root |
 | /data decryption (FBE) | √ | silent background decryption (`auto_decrypt`); Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper; /data mounts as dm-9 (f2fs rw) |
 | WiFi | √ | chip is powered at boot (wmt_loader/wmt_launcher/wlan_assistant, `wlan0`); the joined network is kept on persist and rejoined after a reboot |
-| Online Skyward update | √ | source `LittleStar-OuO/skyward-tb365fc`; updated online from 0.5.2 to v0.5.3 into `vendor_boot_a`, verified after a reboot |
+| Online Skyward update | × | release source configured, but the GitHub releases have been cleared; available again after 0.5.0 is published |
 | Side / power key navigation | √ | volume and power keys verified |
 
 Legend: √ verified; × not done or not available.
@@ -122,12 +118,13 @@ target/release/skyward-pack recovery \
 
 `stock/vendor_boot.img` is the 64 MiB partition image from the stock `TB365FC_ZUXOS_1.1.10.122` package; the output must be 67,108,864 bytes and end in `AVBf`.
 
-`tools/pack_tb365fc.sh` then adds the decryption and WiFi assets and `tools/mkfooter.js` writes the AVB footer back. The verified image is `out/dec121.img` (0.5.3), SHA-256 `9c8a0dd46db254e21bdbc0a0ce21ade073c6590c44cdb33b4a7107eea04fbc14`.
+`tools/pack_tb365fc.sh` then adds the decryption and WiFi assets and `tools/mkfooter.js` writes the AVB footer back. The verified image is `out/dec122.img` (0.5.0), SHA-256 `ac5b9996c7552f512e54b8264a50ec9895aa46c446136e434faa58d475a050f0`.
 
 ## Known issues
 
 - **Install (zip / partition image) is not verified**; the entry points exist but no full flash-and-check run has been done.
 - **Dual-boot switching is not verified**; the device is A/B but no second system has been installed.
+- **Online update is unavailable for now**: the GitHub releases were cleared, so the update page finds no version; it returns once a new release is published.
 - The vendor_boot vendor ramdisk is shared with normal boot. It has been verified not to break the system, but keep the stock images for rollback.
 
 ## Troubleshooting notes

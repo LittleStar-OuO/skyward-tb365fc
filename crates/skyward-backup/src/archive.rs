@@ -468,7 +468,10 @@ fn records(entry: &mut tar::Entry<impl Read>) -> Result<Records> {
     let mut r = Records::default();
     let Some(extensions) = entry.pax_extensions()? else { return Ok(r) };
     for ext in extensions {
-        let ext = ext?;
+        // A record this reader cannot make out, as an attribute whose
+        // value holds the newline it splits records at, leaves the file
+        // itself to be unpacked; only the metadata after it is lost.
+        let Ok(ext) = ext else { break };
         let key = ext.key()?;
         let value = ext.value_bytes();
         if let Some(name) = key.strip_prefix(XATTR) {
@@ -586,6 +589,11 @@ fn beyond(path: &Path, meta: &fs::Metadata) -> Result<Vec<(String, Vec<u8>)>> {
             return Err(io::Error::last_os_error()).with_context(|| format!("read its attribute {name:?}"));
         }
         value.truncate(len as usize);
+        // The archive's reader splits pax records at newlines, so a value
+        // holding one cannot be kept; the file itself still is.
+        if value.contains(&b'\n') {
+            continue;
+        }
         out.push((format!("{XATTR}{}", String::from_utf8_lossy(raw)), value));
     }
     if meta.is_file() || meta.is_dir() {

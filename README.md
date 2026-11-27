@@ -28,7 +28,7 @@
 | 正常 Android 启动不受影响 | √ | 刷着本 recovery 的 vendor_boot 时系统可正常启动 |
 | 安装（zip / 分区镜像） | × | 尚未验证 |
 | 备份 | √ | 全分区备份到 `/data/media/0/Skyward/backups/<时间>`，每项 SHA-256 校验；2026-11-28 实测 19 GB、21 项全部通过（boot/system/data/media/efs） |
-| 恢复 | × | 尚未验证 |
+| 恢复 | √ | 全分区恢复完成（2026-11-28 实测，含 data/media）；日志 `backup restored, all but []`，界面显示“恢复完成” |
 | 双系统 | × | 尚未验证 |
 | MTP（连接电脑） | √ | 开机自动后台启动（`auto_transfer`），Windows 可直接拖入/拖出；双向大文件按 MD5 校验一致。MTU3 单请求上限 65532 字节，MTP 块取 512 对齐的 65024 字节 |
 | recovery 内 `adb shell` | √ | adbd 以 `su` 域运行，root shell 可用 |
@@ -113,7 +113,6 @@ fastboot flash vbmeta_a vbmeta_stock.img
 ## 已知问题
 
 - **安装（zip / 分区镜像）尚未验证**：入口可用，尚未在真机跑完整刷写与校验。
-- **恢复尚未验证**：备份已完成并通过逐项 SHA-256 校验；恢复流程尚未做完整的写回验证。
 - **双系统切换尚未验证**：本机为 A/B，但未建立第二系统并验证切换。
 - **在线更新 Skyward 未配置**：没有发布仓库/更新源。
 - **设备信息卡片部分字段降级显示**：受本机 recovery SELinux 限制，少数字段读取失败时显示为空。

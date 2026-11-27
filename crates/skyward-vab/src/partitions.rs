@@ -475,11 +475,31 @@ pub fn release_partitions(slot: Slot, busy: &[PathBuf]) -> Result<()> {
         if busy.contains(&m.mount_point) {
             mount::umount_detach_over(&m.mount_point)?;
         } else {
-            mount::umount_over(&m.mount_point)?;
-            snapshots::unmap_snapshot(&m.partition)?;
+            match mount::umount_over(&m.mount_point) {
+                Ok(()) => snapshots::unmap_snapshot(&m.partition)?,
+                Err(e) if held(&e) => {
+                    // A mount kept in use by a program the configuration
+                    // does not name, such as a hardware service init
+                    // started, comes off the tree alone: its device stays
+                    // mapped, and what is written under it is the
+                    // partition the program no longer needs.
+                    mount::umount_detach_over(&m.mount_point)
+                        .with_context(|| format!("detach {}", m.mount_point.display()))?;
+                }
+                Err(e) => return Err(e),
+            }
         }
     }
     Ok(())
+}
+
+/// Whether the filesystem would not leave because a program holds it.
+fn held(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.raw_os_error() == Some(libc::EBUSY))
+    })
 }
 
 /// Undo `mount_partitions`: unmount the slot's partitions where their own

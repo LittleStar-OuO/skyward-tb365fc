@@ -233,8 +233,8 @@
 
 ## 当前状态
 
-- 已验证：显示、触摸、adb root/shell、MTP（开机自动启动、双向传输）、`/data` 静默解密、WiFi（开机自动连接、凭据持久化）、侧键/电源键导航、全分区备份（SHA-256 逐项校验）。
-- 未验证/未完成：安装（zip/分区镜像）、恢复、双系统、在线更新。
+- 已验证：显示、触摸、adb root/shell、MTP（开机自动启动、双向传输）、`/data` 静默解密、WiFi（开机自动连接、凭据持久化）、侧键/电源键导航、全分区备份（SHA-256 逐项校验）、全分区恢复（含 data/media）。
+- 未验证/未完成：安装（zip/分区镜像）、双系统、在线更新。
 
 ## 22. recovery 的 servicemanager 与 KeyMint 查找（已解决，见 25）
 
@@ -313,7 +313,7 @@
 3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
 4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
 
-**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；安装（zip/分区镜像）、恢复、双系统、在线更新尚未验证或未配置。
+**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；安装（zip/分区镜像）、双系统、在线更新尚未验证或未配置。
 
 ## 29. WiFi 上电与 supplicant（已解决）
 
@@ -378,7 +378,19 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 - `auto_decrypt`：`ui::run` 首屏固定 `Home`，`Pages::begin()` 在后台启动 `Decryptor::Job::Open`，同时把 `Data` 置为 `Opening`；解密完成自动 `offer_storage()`。KeyMint 未注册时主流程仍先等待（最多 60 s）。
 - `auto_transfer`：`Pages::open()` 强制本次启动打开文件传输并 `Transfer::start()`，随后 `begin()` 把端口切到 `mtp,adb`；开关仍可随时关闭。
 
-**验证镜像**：`out/dec104.img`。日志应出现：
+**验证镜像**：`out/dec117.img`。日志应出现：
 `skyward: run auto_decrypt true starting on Home`、`opening the data partition behind the pages`，随后 `mtp: the computer opened a session`。
+
+## 33. 恢复失败：忙挂载与坏 pax 记录（已解决）
+
+**症状 1**：恢复在写入前失败：`take the slot's partitions off before writing over them: unmount /mnt/system_ext: Device or resource busy (os error 16)`，界面显示“未写入任何内容”。init 启动的 HAL/服务占用 `system_ext`，而 Skyward 的 busy 列表只覆盖配置内的程序。
+
+**修复 1**：`skyward-vab::release_partitions` 在普通 umount 返回 EBUSY 时降级为 `umount_detach_over`（lazy detach），设备保持映射、恢复继续；非 EBUSY 错误照常上报。
+
+**症状 2**：data 恢复报 `restore the data partition's files: read what the archive holds of ai: malformed pax extension`。备份 tar 中 `/data/ai` 的某条 xattr 值含换行，tar-rs 的 pax 读取按换行切分，整条恢复中止，media 因此没有轮到。
+
+**修复 2**：恢复时坏 pax 记录只跳过该条元数据，文件内容继续解包（旧备份也能恢复）；打包时跳过含换行的 xattr，避免再生成这种记录。media 的备份/恢复会跳过 `*/Skyward`，不会覆盖备份自身。
+
+**验证**：`out/dec117.img` 全分区恢复完成，日志 `restored data`、`restored media`、`backup restored, all but []`，界面显示“恢复完成”。
 
 

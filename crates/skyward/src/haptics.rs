@@ -5,7 +5,7 @@ use skyward_config::Strength;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::AsRawFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -29,7 +29,81 @@ const TICKS_REST: Duration = Duration::from_millis(40);
 /// playing after its samples have run out, even when told to stop, until
 /// the click is taken away. So each click is loaded as it is played, at the
 /// strength the slider gives, and taken away once it has played out.
-pub struct Haptics {
+/// How long a click plays on a motor driven through an LED, at the
+/// lightest and at the strongest setting: the regulator drives the motor at
+/// one strength, so the length is what the slider changes.
+const LED_CLICK: (u32, u32) = (8, 28);
+
+/// How long the ticks of the screen going off play on such a motor.
+const LED_TICKS: u32 = 24;
+
+/// The vibration motor, played through the kernel's force-feedback events
+/// or, on a phone whose motor is an LED, through the LED's transient
+/// trigger.
+pub enum Haptics {
+    Force(Force),
+    Led(Led),
+}
+
+impl Haptics {
+    pub fn open(cfg: &skyward_config::Haptics) -> Result<Haptics> {
+        match &cfg.led {
+            Some(dir) => Ok(Haptics::Led(Led::open(Path::new(dir), cfg.strength)?)),
+            None => Ok(Haptics::Force(Force::open(cfg)?)),
+        }
+    }
+
+    pub fn click(&mut self, position: f32) -> Result<Duration> {
+        match self {
+            Haptics::Force(f) => f.click(position),
+            Haptics::Led(l) => l.click(position),
+        }
+    }
+
+    pub fn ticks(&mut self) -> Result<Duration> {
+        match self {
+            Haptics::Force(f) => f.ticks(),
+            Haptics::Led(l) => l.ticks(),
+        }
+    }
+}
+
+/// The motor as an LED: the driver plays one pulse of the duration written
+/// to `duration` when `1` goes to `activate`, with the `transient` trigger
+/// on, and stops on its own.
+struct Led {
+    dir: PathBuf,
+    strength: Strength,
+}
+
+impl Led {
+    fn open(dir: &Path, strength: Strength) -> Result<Led> {
+        let trigger = dir.join("trigger");
+        fs::write(&trigger, "transient").with_context(|| format!("put {} on the transient trigger", dir.display()))?;
+        for attr in ["duration", "activate"] {
+            ensure!(dir.join(attr).is_file(), "{} has no {attr} to play a pulse with", dir.display());
+        }
+        Ok(Led { dir: dir.to_path_buf(), strength })
+    }
+
+    fn click(&self, position: f32) -> Result<Duration> {
+        let share = share(&self.strength, position);
+        let (lightest, strongest) = LED_CLICK;
+        self.play((lightest as f32 + (strongest - lightest) as f32 * share).round() as u32)
+    }
+
+    fn ticks(&self) -> Result<Duration> {
+        self.play(LED_TICKS)
+    }
+
+    fn play(&self, ms: u32) -> Result<Duration> {
+        fs::write(self.dir.join("duration"), ms.to_string()).with_context(|| format!("write {} ms to {}", ms, self.dir.display()))?;
+        fs::write(self.dir.join("activate"), "1").with_context(|| format!("start the pulse through {}", self.dir.display()))?;
+        Ok(Duration::from_millis(ms.into()))
+    }
+}
+
+struct Force {
     dev: File,
     click: Click,
     ticks: Click,
@@ -52,13 +126,14 @@ enum Click {
     Samples { data: Vec<i8>, rate: u32 },
 }
 
-impl Haptics {
+impl Force {
     /// The force-feedback device and the configured click. Loading a click
     /// fills the driver's queue with what it plays, so the click is loaded
     /// only as it is played.
-    pub fn open(cfg: &skyward_config::Haptics) -> Result<Haptics> {
+    fn open(cfg: &skyward_config::Haptics) -> Result<Force> {
         let (path, dev) = motor()?;
-        let hz = resonance(&cfg.resonance)?;
+        let file = cfg.resonance.as_deref().context("the motor's resonant frequency is not configured")?;
+        let hz = resonance(file)?;
         let click = match cfg.click {
             Some(id) => {
                 eprintln!("haptics {}: clicks with waveform {id}, ticks made for a motor swinging at {hz} Hz", path.display());
@@ -70,7 +145,7 @@ impl Haptics {
             }
         };
         let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
-        Ok(Haptics { dev, click, ticks, strength: cfg.strength, scale_samples: cfg.scale_samples, playing: Arc::new(Mutex::new(None)), clicks: 0 })
+        Ok(Force { dev, click, ticks, strength: cfg.strength, scale_samples: cfg.scale_samples, playing: Arc::new(Mutex::new(None)), clicks: 0 })
     }
 
     /// One short click at the strength the slider's `position` gives, after

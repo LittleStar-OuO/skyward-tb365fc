@@ -31,6 +31,14 @@ diagonal = 12.1
 # panel comes up in, as xaga does.
 fastest_refresh = false
 
+[haptics]
+# The MT6835's regulator motor is not a force-feedback input device: it
+# shows as an LED whose transient trigger plays one pulse of the duration
+# written before `activate`, at one strength. The click's length is what
+# the strength slider changes.
+led = "/sys/class/leds/vibrator"
+strength = { lightest = 0.25, strongest = 1.0 }
+
 [modules]
 # init loads modules.load.recovery from the vendor_boot ramdisk before it
 # starts the recovery service: the Himax touchscreen driver (hxchipset), the

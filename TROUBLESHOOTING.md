@@ -315,7 +315,7 @@
 3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
 4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
 
-**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；振动/在线更新尚未做。
+**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；在线更新尚未做。
 
 ## 29. WiFi 上电与 supplicant（已解决）
 
@@ -382,3 +382,17 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 
 **验证镜像**：`out/dec104.img`。日志应出现：
 `skyward: run auto_decrypt true starting on Home`、`opening the data partition behind the pages`，随后 `mtp: the computer opened a session`。
+
+## 32. 震动：regulator_vibrator 的 LED transient trigger（已解决）
+
+**现象/原因**：本机马达驱动是 `regulator_vibrator`，只创建 `/sys/class/leds/vibrator`，**没有** FF 输入设备；Skyward 原实现从 `/dev/input` 找支持 `FF_PERIODIC` 的设备并读共振频率，因此打不开、震动完全不可用。原厂 HAL 字符串也显示两条路径：`/sys/class/timed_output/vibrator/enable` 与 `/sys/class/leds/vibrator`。
+
+**正确用法**（实测）：
+1. `echo transient > /sys/class/leds/vibrator/trigger` —— 之后才出现 `duration`、`state`、`activate` 属性。
+2. `echo <毫秒> > duration`。
+3. `echo 1 > activate` —— 驱动打开 regulator，到时自动关闭（dmesg：`vibr_enable` / `vibr_disable`）。
+   只写 `state=1` 不会启动；`activate=1` 才是单次脉冲。
+
+**Skyward 集成**：`[haptics]` 新增 `led = "/sys/class/leds/vibrator"`，`resonance` 变为可选。点击把力度滑块映射到 8–28 ms，息屏提示固定 24 ms；不需要共振频率，也没有振幅控制（regulator 只有开/关）。`haptic` CLI（用改名副本运行）可直接验证。
+
+**验证**：CLI 输出 `played the click ... 14 ms long` / `played the ticks ... 24 ms long`，内核日志出现对应的 `vibr_enable`/`vibr_disable`。

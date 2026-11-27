@@ -38,8 +38,6 @@ fastboot flash vbmeta_a vbmeta_stock.img
 
 ## 目标机型
 
-基于 [kirklin/skyward](https://github.com/kirklin/skyward) 与 [BkaNeko/xaga-skyward](https://github.com/BkaNeko/xaga-skyward) 移植的第三方 recovery，目标机型：
-
 | 项目 | 值 |
 | --- | --- |
 | 机型 | 联想小新 Pad 12.1 2025（Lenovo Xiaoxin Pad 12.1） |
@@ -50,8 +48,6 @@ fastboot flash vbmeta_a vbmeta_stock.img
 | 屏幕 | 12.1" 2560×1600 90Hz，density 320 |
 | 触摸 | Himax HX83122B（`himax-touchscreen`） |
 | recovery 位置 | **vendor_boot**（无独立 recovery 分区） |
-
-> GPL-3.0-or-later。Skyward 原作者为 Kirk Lin；MTK/vendor_boot/竖屏等改动来自 BkaNeko 的 xaga fork。
 
 ## 适配状态
 

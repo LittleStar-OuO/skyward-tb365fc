@@ -25,6 +25,14 @@ restart_service_directory = false
 # about a newer build for this phone.
 releases = "LittleStar-OuO/skyward-tb365fc"
 
+# The stock boot control (HIDL 1.2), which the update writer asks which
+# slot starts next before it writes the recovery partitions.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot@1.2-service"
+libraries = ["/system/lib64", "/system/lib64/vndk33", "/vendor/lib64", "/vendor/lib64/hw"]
+user = "root"
+groups = ["root"]
+
 [display]
 # The 12.1-inch 2560 x 1600 panel, natural portrait; density as the running
 # system reports it (wm density 320).

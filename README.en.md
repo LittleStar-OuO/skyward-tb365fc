@@ -73,7 +73,7 @@ Third-party recovery ported from [kirklin/skyward](https://github.com/kirklin/sk
 | adb root in recovery | √ | adbd/su/shell are permissive under the debug policy; `adb shell id` is root |
 | /data decryption (FBE) | √ | silent background decryption (`auto_decrypt`); Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper; /data mounts as dm-9 (f2fs rw) |
 | WiFi | √ | chip is powered at boot (wmt_loader/wmt_launcher/wlan_assistant, `wlan0`); the joined network is kept on persist and rejoined after a reboot |
-| Online Skyward update | × | no release repository configured |
+| Online Skyward update | √ | source `LittleStar-OuO/skyward-tb365fc`; updated online from 0.5.2 to v0.5.3 into `vendor_boot_a`, verified after a reboot |
 | Side / power key navigation | √ | volume and power keys verified |
 
 Legend: √ verified; × not done or not available.
@@ -96,6 +96,7 @@ The recovery SELinux policy on this device is much stricter than on Xiaomi phone
 12. **WiFi VNDK libraries**: the vendor supplicant needs `libnl.so`, `libssl.so`, `libcrypto.so` and `android.hardware.wifi.supplicant-V1-ndk.so` from the VNDK v33 APEX, which recovery does not mount. They are embedded in `/system/lib64/vndk33/`; `android.hardware.wifi.supplicant.ISupplicant/default` must be in the image's framework VINTF because servicemanager reads VINTF only at startup.
 13. **WiFi persistence**: after a successful join the SSID/security/password are written to `/mnt/vendor/persist/skyward/wifi/` (0600); `auto_join = true` rejoins at boot and `prewarm = false` keeps calibration off the first screen. The PSK is plain text readable only by recovery root.
 14. **Restore robustness**: a mount kept busy by init-started services is lazily detached instead of failing; an unreadable pax record only loses that record's metadata; the packer no longer writes xattr values containing newlines.
+15. **Online Skyward update**: `[skyward] releases = "LittleStar-OuO/skyward-tb365fc"`. The updater asks the stock HIDL boot HAL (`android.hardware.boot@1.2-service`) which slot starts next, and falls back to HIDL when the AIDL `IBootControl` is only declared but not running. Release assets are named `skyward-<tag>-tb365fc-<stock build>.zip` and hold the whole vendor_boot image.
 
 ## Building
 
@@ -121,13 +122,12 @@ target/release/skyward-pack recovery \
 
 `stock/vendor_boot.img` is the 64 MiB partition image from the stock `TB365FC_ZUXOS_1.1.10.122` package; the output must be 67,108,864 bytes and end in `AVBf`.
 
-`tools/pack_tb365fc.sh` then adds the decryption and WiFi assets and `tools/mkfooter.js` writes the AVB footer back. The verified image is `out/dec117.img`, SHA-256 `e959af194f2ae02cb028f37ec6d04888d11b7e7a391f2dd0823297e16b2fc0f1`.
+`tools/pack_tb365fc.sh` then adds the decryption and WiFi assets and `tools/mkfooter.js` writes the AVB footer back. The verified image is `out/dec121.img` (0.5.3), SHA-256 `9c8a0dd46db254e21bdbc0a0ce21ade073c6590c44cdb33b4a7107eea04fbc14`.
 
 ## Known issues
 
 - **Install (zip / partition image) is not verified**; the entry points exist but no full flash-and-check run has been done.
 - **Dual-boot switching is not verified**; the device is A/B but no second system has been installed.
-- **Online Skyward update is not configured**; there is no release repository.
 - The vendor_boot vendor ramdisk is shared with normal boot. It has been verified not to break the system, but keep the stock images for rollback.
 
 ## Troubleshooting notes

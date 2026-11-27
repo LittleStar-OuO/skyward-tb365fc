@@ -97,8 +97,12 @@ impl<'a> BootControl<'a> {
     /// otherwise. Say so where it is not running.
     pub fn open(binder: &'a Binder, hardware: &'a Binder) -> Result<BootControl<'a>> {
         let not_running = |name: &str| format!("{name} is not running; the phone's boot control has to be started first");
-        if service::declared(binder, SERVICE)? {
-            let control = service::find(binder, SERVICE)?.with_context(|| not_running(SERVICE))?;
+        // The directory may be told of one of the newer kind the phone does
+        // not run, as a recovery is told of the phone's own services from
+        // its descriptions; the older kind then has to be looked for.
+        if service::declared(binder, SERVICE)?
+            && let Some(control) = service::find(binder, SERVICE)?
+        {
             return Ok(BootControl::Newer(control));
         }
         let control = hidl::find(hardware, HARDWARE_SERVICE, INSTANCE)?.with_context(|| not_running(HARDWARE_SERVICE))?;

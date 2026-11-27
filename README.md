@@ -73,7 +73,7 @@ fastboot flash vbmeta_a vbmeta_stock.img
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
 | /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
 | WiFi | √ | 开机自动上电（wmt_loader/wmt_launcher/wlan_assistant + `wlan0`），连接成功后的网络保存在 persist，重启自动连回；扫描/连接/ DHCP 已验证 |
-| 在线更新 Skyward | × | 未配置发布仓库 |
+| 在线更新 Skyward | √ | 发布源 `LittleStar-OuO/skyward-tb365fc`；已从 0.5.2 在线更新到 v0.5.3 并写入 `vendor_boot_a`，重启验证通过 |
 | 侧键/电源键导航 | √ | 音量键/电源键导航已验证可用 |
 
 图例：√ 已验证可用；× 未完成/不可用。
@@ -96,6 +96,7 @@ fastboot flash vbmeta_a vbmeta_stock.img
 12. **WiFi VNDK 库**：supplicant 依赖的 `libnl.so`、`libssl.so`、`libcrypto.so`、`android.hardware.wifi.supplicant-V1-ndk.so` 在 recovery 未挂载的 VNDK v33 APEX 里，已提取进 ramdisk 的 `/system/lib64/vndk33/`；`android.hardware.wifi.supplicant.ISupplicant/default` 必须写进镜像的 framework VINTF（servicemanager 只在启动时读 VINTF）。
 13. **WiFi 凭据持久化**：连接成功（supplicant 已协商密钥）后写入 `/mnt/vendor/persist/skyward/wifi/`（0600）；`auto_join = true` 在开机时自动重连，`prewarm = false` 把校准放在后台 WLAN 线程里，不阻塞界面。密码为明文保存（仅 recovery root 可读），这是 recovery 环境下的取舍。
 14. **恢复健壮性**：恢复前 detach 时，普通 umount 遇 EBUSY 自动降级为 lazy detach（init 启动的 HAL/服务占用 system_ext 等）；坏 pax 记录只跳过该条元数据、继续解文件；打包时不再写入含换行的 xattr。
+15. **在线更新 Skyward**：`[skyward] releases = "LittleStar-OuO/skyward-tb365fc"`；更新器用 stock HIDL boot HAL（`android.hardware.boot@1.2-service`）询问下次启动槽位；当 AIDL `IBootControl` 只在描述中存在但未运行时回退到 HIDL。Release 资产命名为 `skyward-<tag>-tb365fc-<stock build>.zip`，内含整份 vendor_boot 镜像。
 
 ## 构建
 
@@ -121,17 +122,16 @@ target/release/skyward-pack recovery \
 
 `stock/vendor_boot.img` 为原厂 `TB365FC_ZUXOS_1.1.10.122` 刷机包中的 `vendor_boot.img`（整分区 64 MiB，末尾带 AVB footer）。产物应为 67,108,864 字节并以 `AVBf` 结尾。
 
-解密、WiFi、USB/crypto 包装与 VNDK 库由 `tools/pack_tb365fc.sh` 继续注入，再用 `tools/mkfooter.js` 写回 AVB footer；当前验证镜像为 `out/dec117.img`：
+解密、WiFi、USB/crypto 包装与 VNDK 库由 `tools/pack_tb365fc.sh` 继续注入，再用 `tools/mkfooter.js` 写回 AVB footer；当前验证镜像为 `out/dec121.img`（0.5.3）：
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `dec117.img` | `e959af194f2ae02cb028f37ec6d04888d11b7e7a391f2dd0823297e16b2fc0f1` |
+| `dec121.img` | `9c8a0dd46db254e21bdbc0a0ce21ade073c6590c44cdb33b4a7107eea04fbc14` |
 
 ## 已知问题
 
 - **安装（zip / 分区镜像）尚未验证**：入口可用，尚未在真机跑完整刷写与校验。
 - **双系统切换尚未验证**：本机为 A/B，但未建立第二系统并验证切换。
-- **在线更新 Skyward 未配置**：没有发布仓库/更新源。
 - vendor_boot 的 vendor ramdisk 同时用于正常启动；已验证不影响系统启动，但请保留原厂镜像以便回滚。
 
 ## 排查记录（Troubleshooting）

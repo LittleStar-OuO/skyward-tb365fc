@@ -38,6 +38,12 @@ const HOME: &str = "/tmp/skyward/supplicant";
 /// make its socket.
 const WIFI: u32 = 1010;
 
+/// The network joined last, kept on the persist partition so a start
+/// after a restart joins it again without the password being typed. It is
+/// written only once the supplicant has agreed the keys, so a password
+/// that was wrong is never kept.
+const SAVED: &str = "/mnt/vendor/persist/skyward/wifi/wifi.conf";
+
 /// How long the driver may take to make its interface, the chip's firmware
 /// loading meanwhile.
 const INTERFACE_WAIT: Duration = Duration::from_secs(20);
@@ -132,7 +138,7 @@ impl Worker {
         let (inbox, asked) = worker::telling().context("make the WLAN thread's inbox")?;
         let back = inbox.clone();
         let worker = worker::Worker::start("wlan", move |tell| {
-            let mut s = Station { cfg, modules, libraries, servers, state: Wlan::default(), running: None, back, tell };
+            let mut s = Station { cfg, modules, libraries, servers, state: Wlan::default(), running: None, pending: None, back, tell };
             s.run(&asked);
         })?;
         Ok(Worker { inbox, worker })
@@ -219,6 +225,89 @@ impl Held {
     }
 }
 
+/// The network joined last, as the recovery keeps it: the name as it is
+/// on the air in its bytes, how it is protected, and the password as it
+/// was typed.
+#[derive(Clone)]
+struct Saved {
+    ssid: Vec<u8>,
+    security: Security,
+    password: String,
+}
+
+impl Saved {
+    fn name(&self) -> String {
+        String::from_utf8_lossy(&self.ssid).into_owned()
+    }
+
+    fn read() -> Option<Saved> {
+        let text = fs::read_to_string(SAVED).ok()?;
+        let mut ssid = None;
+        let mut security = None;
+        let mut password = None;
+        for line in text.lines() {
+            let Some((name, value)) = line.split_once('=') else { continue };
+            match name {
+                "ssid" => ssid = unhex(value),
+                "security" => security = security_named(value),
+                "password" => password = unhex(value).map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+                _ => {}
+            }
+        }
+        Some(Saved { ssid: ssid?, security: security?, password: password? })
+    }
+
+    fn write(&self) -> Result<()> {
+        let folder = Path::new(SAVED).parent().expect("the saved network is in a folder");
+        fs::create_dir_all(folder).with_context(|| format!("make {}", folder.display()))?;
+        fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).with_context(|| format!("keep {} to the recovery", folder.display()))?;
+        let temp = format!("{SAVED}.new");
+        let text = format!(
+            "ssid={}\nsecurity={}\npassword={}\n",
+            hex(&self.ssid),
+            security_name(self.security),
+            hex(self.password.as_bytes())
+        );
+        fs::write(&temp, text).with_context(|| format!("write {temp}"))?;
+        fs::set_permissions(&temp, fs::Permissions::from_mode(0o600)).with_context(|| format!("keep {temp} to the recovery"))?;
+        fs::rename(&temp, SAVED).with_context(|| format!("move {temp} over {SAVED}"))?;
+        Ok(())
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).ok()).collect()
+}
+
+fn security_name(security: Security) -> &'static str {
+    match security {
+        Security::Open => "open",
+        Security::Owe => "owe",
+        Security::Psk => "psk",
+        Security::Sae => "sae",
+        Security::PskSae => "psk-sae",
+        Security::Wep | Security::Enterprise => "unsupported",
+    }
+}
+
+fn security_named(name: &str) -> Option<Security> {
+    Some(match name {
+        "open" => Security::Open,
+        "owe" => Security::Owe,
+        "psk" => Security::Psk,
+        "sae" => Security::Sae,
+        "psk-sae" => Security::PskSae,
+        _ => return None,
+    })
+}
+
 struct Station {
     cfg: Config,
     modules: Vec<PathBuf>,
@@ -226,6 +315,9 @@ struct Station {
     servers: Servers,
     state: Wlan,
     running: Option<Running>,
+    /// The network being joined, kept to be written once the supplicant
+    /// has agreed its keys.
+    pending: Option<Saved>,
     /// What a thread asking for an address, or looking how far the
     /// network reaches, answers to: the thread's own inbox.
     back: Teller<Inbox>,
@@ -234,6 +326,11 @@ struct Station {
 
 impl Station {
     fn run(&mut self, asked: &worker::Told<Inbox>) {
+        // A network joined before the last restart joins again as the
+        // recovery starts, where the device asks for that.
+        if self.cfg.auto_join && Saved::read().is_some() {
+            self.on();
+        }
         let mut told = self.state.clone();
         loop {
             let mut fds = vec![libc::pollfd { fd: asked.fd(), events: libc::POLLIN, revents: 0 }];
@@ -286,9 +383,12 @@ impl Station {
             Command::Join { ssid, name, security, password } => {
                 self.unaddress();
                 let mut joined = Joined { ssid, name, security, stage: Stage::Joining };
+                let saved = Saved { ssid: joined.ssid.clone(), security, password: password.clone() };
                 if let Err(e) = self.join(&joined, &password) {
                     let _ = skyward_sys::kmsg(&format!("joining {} failed: {e:#}", joined.name));
                     joined.stage = Stage::Failed;
+                } else {
+                    self.pending = Some(saved);
                 }
                 self.state.joined = Some(joined);
             }
@@ -314,6 +414,9 @@ impl Station {
             Ok(r) => {
                 self.running = Some(r);
                 self.state.power = Power::On;
+                // A network joined before joins again, whether the WLAN is
+                // switched on at a restart or by the page.
+                self.rejoin();
                 self.command(Command::Scan);
             }
             Err(e) => {
@@ -389,6 +492,28 @@ impl Station {
         r.control.order(&format!("SELECT_NETWORK {id}"))
     }
 
+    /// Join the network the recovery kept, if there is one, as the WLAN
+    /// comes up: the supplicant starts with no networks of its own, so the
+    /// one joined last is added again from what was kept.
+    fn rejoin(&mut self) {
+        if self.state.joined.is_some() {
+            return;
+        }
+        let Some(saved) = Saved::read() else { return };
+        let mut joined = Joined { ssid: saved.ssid.clone(), name: saved.name(), security: saved.security, stage: Stage::Joining };
+        match self.join(&joined, &saved.password) {
+            Ok(()) => {
+                let _ = skyward_sys::kmsg(&format!("joining {} again, as it was kept", joined.name));
+                self.pending = Some(saved);
+            }
+            Err(e) => {
+                let _ = skyward_sys::kmsg(&format!("joining {} again failed: {e:#}", joined.name));
+                joined.stage = Stage::Failed;
+            }
+        }
+        self.state.joined = Some(joined);
+    }
+
     /// Read what the supplicant has told.
     fn listen(&mut self) {
         let Some(r) = &self.running else { return };
@@ -428,7 +553,21 @@ impl Station {
 
     fn joining(&mut self, told: &Told) {
         let Some(j) = &mut self.state.joined else { return };
-        match j.on(told) {
+        // The keys are agreed: the network is kept for the starts after
+        // this one. A connection to another access point of the network
+        // joined changes nothing, and is not kept again.
+        let fresh = matches!(told, Told::Connected) && !matches!(j.stage, Stage::Addressing | Stage::Connected(_) | Stage::NoAddress(_));
+        let next = j.on(told);
+        if fresh
+            && let Some(saved) = self.pending.take()
+            && let Err(e) = saved.write()
+        {
+            let _ = skyward_sys::kmsg(&format!("the network joined is not kept: {e:#}"));
+        }
+        if matches!(told, Told::TemporarilyDisabled { reason } if reason == "WRONG_KEY") {
+            self.pending = None;
+        }
+        match next {
             Next::Show => {}
             Next::Address => self.ask_address(),
             Next::Unaddress => self.unaddress(),

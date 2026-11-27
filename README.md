@@ -33,7 +33,7 @@
 | recovery 内 `adb shell` | √ | adbd 以 `su` 域运行，root shell 可用 |
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
 | /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
-| WiFi | × | 第二阶段：MTK connsys（wlan_assistant/conninfra_loader） |
+| WiFi | √ | 开机自动上电（wmt_loader/wmt_launcher/wlan_assistant + `wlan0`），连接成功后的网络保存在 persist，重启自动连回；扫描/连接/ DHCP 已验证 |
 | 振动 | × | 未配置（MTK regulator-vibrator 无共振频率节点） |
 | 在线更新 Skyward | × | 未配置发布仓库 |
 | 侧键/电源键导航 | 未测 | 触摸已可用 |
@@ -50,10 +50,13 @@
 4. **uevent 监听容错**：netlink socket 被拒时跳过事件监听，界面照常刷新。
 5. **`/sys/power/mem_sleep` 写入容错**：被拒时休眠线程按“被拒绝”处理，不退出。
 6. **属性追加策略**：原厂 `prop.default` 已两次定义 `ro.secure/ro.adb.secure/ro.debuggable`，本机 init 拒绝再次定义；新增配置项 `device.adb_root`（默认 true），本机设为 `false`，保留原厂值。
-7. **新设备配置** `devices/tb365fc.toml`：显示 1600×2560/320dpi、90Hz 不强制、`modules.sources=["vendor_boot"]`、挂载 `persist`、MTK EFS 备份项等。
+7. **新设备配置** `devices/tb365fc.toml`：显示 1600×2560/320dpi、90Hz 不强制、`modules.sources=["vendor_boot","vendor_dlkm","vendor"]`、挂载 `persist`/`metadata`、MTK EFS 备份项等。
 8. **MTP 绑定修复**：切到 `mtp,adb` 时先解绑 UDC 并清掉 configfs 里 adb 占用的 `f1`，再重新绑定双功能；返回 adb 时同样清理并重新绑定。xaga fork 原实现跳过 `none`，导致 MTP symlink 冲突而只有 ADB。另删除了重复的 adb 绑定 action（曾造成 gadget 反复重绑、USB 消失），并由 `auto_transfer` 在开机后自动启动。
 9. **MTU3 传输块上限**：MediaTek MTU3 对超过 65532 字节的端点请求返回 `-EOPNOTSUPP`，而 FunctionFS 会把读缓冲向上对齐到整包，因此 MTP 块大小取 65024（127×512）。否则 Windows 一开始传输文件就会因请求失败而重置设备。
-10. **调试/打包工具** `tools/` 与 `crates/skyward-pack/src/bin/ramdisk-x.rs`：用于检查/修改 vendor_boot ramdisk（非打包必需）。`tools/mtp-test.ps1` 可在 Windows 上无人值守地测 MTP 写入/读出。
+10. **调试/打包工具** `tools/` 与 `crates/skyward-pack/src/bin/ramdisk-x.rs`：用于检查/修改 vendor_boot ramdisk（非打包必需）。`tools/mtp-test.ps1` 可在 Windows 上无人值守地测 MTP 写入/读出；`tools/pack_tb365fc.sh` 把解密、USB/crypto 包装、VNDK 库与 AVB 尾部一次性打进镜像。
+11. **WiFi 上电链**：MT6835 的 connac1x 由 `wmt_loader` → `wmt_launcher` → `wlan_assistant` 启动（不是 `conninfra_loader`）；`wmt_drv`/`connfem` 由 `[modules].load` 在开机时加载，`wlan_drv_gen4m_6835` 在 WLAN 拉起时加载，NVRAM 从只读挂载的 nvdata 读取。
+12. **WiFi VNDK 库**：supplicant 依赖的 `libnl.so`、`libssl.so`、`libcrypto.so`、`android.hardware.wifi.supplicant-V1-ndk.so` 在 recovery 未挂载的 VNDK v33 APEX 里，已提取进 ramdisk 的 `/system/lib64/vndk33/`；`android.hardware.wifi.supplicant.ISupplicant/default` 必须写进镜像的 framework VINTF（servicemanager 只在启动时读 VINTF）。
+13. **WiFi 凭据持久化**：连接成功（supplicant 已协商密钥）后写入 `/mnt/vendor/persist/skyward/wifi/`（0600）；`auto_join = true` 在开机时自动重连，`prewarm = false` 把校准放在后台 WLAN 线程里，不阻塞界面。密码为明文保存（仅 recovery root 可读），这是 recovery 环境下的取舍。
 
 ## 构建
 

@@ -315,7 +315,45 @@
 3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
 4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
 
-**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；WiFi/振动/在线更新尚未做。
+**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；振动/在线更新尚未做。
+
+## 29. WiFi 上电与 supplicant（已解决）
+
+**硬件/模块**：MT6835 内置 connac1x；`ro.vendor.wlan.gen=gen4m_6835`。模块在 `/vendor_dlkm/lib/modules`：`connadp`、`btif_drv`、`wmt_drv`、`connfem`、`wmt_chrdev_wifi`、`wlan_drv_gen4m_6835`（6 MB，固件内嵌），`/vendor/lib/modules` 是符号链接。
+
+**原厂启动链**（实测 Android 进程）：`wmt_loader`（oneshot）→ `wmt_launcher -p /vendor/firmware/ -o 1`（常驻，置 `vendor.connsys.driver.ready=yes`）→ 加载 `wmt_chrdev_wifi` + `wlan_drv` → `wlan_assistant`（wifi 用户，读 nvdata 的 APCFG/APRDEB/WIFI，写驱动后置 `vendor.mtk.nvram.ready=1`）→ 写 `/dev/wmtWifi=1` → `wlan0`。**本机没有 `conninfra_loader` 进程**，不要照搬 xaga 的配置。
+
+**节点**：`/dev/wmtWifi`（wifi:wifi 660，`[wlan].nodes` 在模块加载后移交）、`/dev/wmtdetect`、`/dev/stpwmt`（root，wmt_loader/launcher 以 root 运行即可）。
+
+**坑与修复**：
+1. `wlan_assistant` 配 `groups=["system","gps","inet"]` 会失败：recovery 的账户表没有 `inet`。去掉 `inet`。
+2. supplicant 链接失败：VNDK v33 APEX 在 recovery 未挂载。从原厂 Android 的 `/apex/com.android.vndk.v33/lib64/` 提取 `libnl.so`、`libssl.so`、`libcrypto.so`、`android.hardware.wifi.supplicant-V1-ndk.so`，放进 ramdisk `/system/lib64/vndk33/`，并在 `[wlan].libraries` 首位加入该目录。
+3. supplicant 退出 255：servicemanager 报 `Could not find android.hardware.wifi.supplicant.ISupplicant/default in the VINTF manifest`。servicemanager 只在启动时读 VINTF，Skyward 启动后写的 `phone.xml` 太晚。把该 AIDL HAL 写进镜像的 framework manifest（`work/framework_manifest_full.xml`）即可。
+
+**验证**：无头扫描 `Cmd::Wlan` 扫到 23 个网络；UI 连接成功，DHCP 得到 192.168.0.180。
+
+## 30. WiFi 凭据持久化（已解决）
+
+连接成功（收到 `CTRL-EVENT-CONNECTED`）后，Skyward 把 SSID/安全类型/密码写入 `/mnt/vendor/persist/skyward/wifi/wifi.conf`（目录 0700、文件 0600，明文 PSK，仅 recovery root 可读）。`[wlan] auto_join = true` 让 WLAN 在开机时自动拉起并加入保存的网络；`prewarm = false`，把芯片校准放在 WLAN 线程里，不阻塞首屏。密码错误（`WRONG_KEY`）不会保存。
+
+**验证**：连接后出现 `joining TP-LINK_20DE-5G again, as it was kept`，随后 `wlan0 has 192.168.0.180 ...`；重启后无需再输入密码。
+
+## 31. 测试 WLAN 时不要把 USB 弄丢
+
+**根因**：直接执行 `/system/bin/recovery wlan --config ...` 时，程序按 `argv[0]` 判断自己是 `recovery`，会忽略子命令、启动**第二个 recovery 实例**。它启动时会把 USB 先切到 `none` 再切 `adb`，导致原实例的 adb/MTP 消失，且两个实例抢 WLAN/supplicant。
+
+**正确做法**：为 CLI 建一个改名的副本/符号链接（如 `/tmp/skyward-cli`），用 `argv[0]` ≠ `recovery` 运行：
+```sh
+ln -sf /system/bin/recovery /tmp/skyward-cli
+/tmp/skyward-cli wlan --config /skyward/device.toml
+```
+
+**看输出**：该调试版在 `main()` 开头把 stdout/stderr 重定向到 pstore，并被后台线程覆盖。测试时临时把 pstore 符号链接挪开即可看到输出，结束后恢复：
+```sh
+mv /dev/block/by-name/pstore /tmp/pstore-link
+/tmp/skyward-cli wlan --config /skyward/device.toml; echo RC=$?
+mv /tmp/pstore-link /dev/block/by-name/pstore
+```
 
 ## 27. MTP 一传文件就断：MTU3 的 64K 端点请求上限（已解决）
 

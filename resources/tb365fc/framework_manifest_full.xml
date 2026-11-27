@@ -17,6 +17,10 @@
         <name>android.hardware.security.sharedsecret</name>
         <fqname>ISharedSecret/default</fqname>
     </hal>
+    <hal format="aidl">
+        <name>android.hardware.wifi.supplicant</name>
+        <fqname>ISupplicant/default</fqname>
+    </hal>
     <hal format="hidl">
         <name>android.hardware.gatekeeper</name>
         <transport>hwbinder</transport>

@@ -34,13 +34,71 @@ fastest_refresh = false
 [modules]
 # init loads modules.load.recovery from the vendor_boot ramdisk before it
 # starts the recovery service: the Himax touchscreen driver (hxchipset), the
-# panel and the vibration motor are among them, so nothing extra is loaded
-# here.
-sources = ["vendor_boot"]
-load = []
+# panel and the vibration motor are among them. MediaTek's connectivity
+# drivers live on vendor_dlkm, which the vendor partition links to; the
+# WLAN driver itself loads later, once nvdata is mounted for its settings.
+sources = ["vendor_boot", "vendor_dlkm", "vendor"]
+load = ["connfem", "wmt_drv"]
 
 # The Himax HX83122B touchscreen reports ordinary multitouch, as far as
 # dumpsys input shows (himax-touchscreen, TOUCH_MT); nothing is written to it.
+
+# MediaTek's connectivity bring-up: wmt_loader makes the node the launcher
+# opens, and wmt_launcher sets the chip up and tells the phone it is ready;
+# the assistant waits for the WLAN driver's node and writes the chip's
+# settings to it. All run as root: the node wmt_loader makes is root's, and
+# the launcher opens it as the phone's init runs both (a recovery's ueventd
+# gives the node to no other account). wlan_assistant keeps the account the
+# phone gives it, which the settings in nvdata allow.
+[[service]]
+path = "/vendor/bin/wmt_loader"
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+
+[[service]]
+path = "/vendor/bin/wmt_launcher"
+args = ["-p", "/vendor/firmware/", "-o", "1"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+
+[[service]]
+path = "/vendor/bin/wlan_assistant"
+libraries = ["/system/lib64/vndk33", "/vendor/lib64", "/system/lib64"]
+user = "wifi"
+groups = ["system", "gps"]
+
+[wlan]
+# The MT6835's connac1x WLAN driver; the dependencies in modules.dep load
+# first (wmt_chrdev_wifi, wmt_drv, btif_drv, connadp).
+modules = ["wlan_drv_gen4m_6835"]
+# The node the WLAN driver makes as it loads, as the phone's own init
+# gives it: wlan_assistant runs as wifi, and a recovery's ueventd leaves
+# the node root's.
+nodes = [{ user = "wifi", group = "wifi", mode = 0o660, paths = ["/dev/wmtWifi"] }]
+# The chip's settings: wlan_assistant reads them from the nvdata
+# partition's APCFG/APRDEB/WIFI, which a recovery does not keep mounted.
+mounts = [{ partition = "nvdata", at = "/mnt/vendor/nvdata" }]
+# Once the driver's node is there, wlan_assistant writes those settings to
+# it and says so. They are only read as the chip starts, so the switch-on
+# waits for this.
+settings = { property = "vendor.mtk.nvram.ready", value = "1" }
+# The first write of a boot is answered with an error while the
+# connectivity part runs its calibration, though the chip goes on starting;
+# writing again a moment later lands as soon as it is ready.
+writes = [{ path = "/dev/wmtWifi", value = "1" }]
+attempts = 12
+# The network joined last is kept on persist and joined again as the
+# recovery starts; bringing the chip up for that spends its calibration
+# while the pages are looked at, so nothing is warmed ahead of the pages.
+prewarm = false
+auto_join = true
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+# The VNDK v33 libraries the vendor supplicant asks for are not mounted in
+# a recovery; libnl, libssl, libcrypto and the supplicant's AIDL library
+# sit in vndk33 in the ramdisk.
+libraries = ["/system/lib64/vndk33", "/vendor/lib64", "/system/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
 
 [partitions]
 # The phone mounts persist at /mnt/vendor/persist; the sensors' calibration

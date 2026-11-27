@@ -143,6 +143,10 @@ pub struct Wlan {
     /// that the recovery can spend while the pages are being looked at.
     #[serde(default)]
     pub prewarm: bool,
+    /// Join the network the last start kept as the recovery starts, rather
+    /// than leaving the WLAN off until its switch is turned on.
+    #[serde(default)]
+    pub auto_join: bool,
     /// What is written once they are in, each value to its file, such as
     /// what tells a platform driver it may start the chip.
     #[serde(default)]

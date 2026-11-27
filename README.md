@@ -34,11 +34,10 @@
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
 | /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
 | WiFi | √ | 开机自动上电（wmt_loader/wmt_launcher/wlan_assistant + `wlan0`），连接成功后的网络保存在 persist，重启自动连回；扫描/连接/ DHCP 已验证 |
-| 振动 | × | 本机**没有振动马达**（硬件未配备）；DT/HAL/工厂配置是 MTK/联想通用模板。设置页已隐藏振动开关与力度滑条 |
 | 在线更新 Skyward | × | 未配置发布仓库 |
-| 侧键/电源键导航 | 未测 | 触摸已可用 |
+| 侧键/电源键导航 | √ | 音量键/电源键导航已验证可用 |
 
-图例：√ 已验证可用；× 未完成/不可用；未测 = 尚未在真机验证。
+图例：√ 已验证可用；× 未完成/不可用。
 
 ## 与原版的主要差异
 
@@ -112,11 +111,12 @@ fastboot flash vbmeta_a vbmeta_stock.img
 
 ## 已知问题
 
-- **recovery 内 adb shell 不可用**：adbd 设置 shell 子进程 SELinux 上下文失败（策略无 shell 域）。ADB 接口可见，但 `adb shell` 会触发 adbd 崩溃。可使用 Skyward 内置终端。
-- **MTP 存储浏览需先解密 /data**：MTP 设备已能枚举；内部存储（/sdcard）在 /data 解密后才可浏览。
-- **adb root 被禁用**：本机 init 对重复/覆盖只读属性敏感，`adb_root = false` 保留原厂属性。
-- 未包含 /data 解密、WiFi、振动、双系统适配（见状态表）。
-- vendor_boot 的 vendor ramdisk 同时用于正常启动；本适配已使其不影响系统启动，但请保留原厂镜像以便回滚。
+- **安装（zip / 分区镜像）尚未验证**：入口可用，尚未在真机跑完整刷写与校验。
+- **备份 / 恢复尚未验证**：入口可用，尚未做完整的备份→恢复往返验证。
+- **双系统切换尚未验证**：本机为 A/B，但未建立第二系统并验证切换。
+- **在线更新 Skyward 未配置**：没有发布仓库/更新源。
+- **设备信息卡片部分字段降级显示**：受本机 recovery SELinux 限制，少数字段读取失败时显示为空。
+- vendor_boot 的 vendor ramdisk 同时用于正常启动；已验证不影响系统启动，但请保留原厂镜像以便回滚。
 
 ## 目录
 

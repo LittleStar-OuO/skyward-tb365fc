@@ -44,7 +44,7 @@
 
 **解决**：
 - packer 写属性前先删除同名键（避免重复）；
-- 本机配置 `device.adb_root = false`，完全不追加 `ro.secure=0` 等，保留原厂值（adb 仍可用，但 recovery 内 `adb shell` 受限，见 9）。
+- 本机最后配置 `device.adb_root = true`：debug policy 下 adbd/su/shell 为 permissive，`adb shell` 以 root 运行（见 9）。
 
 **验证**：属性测试镜像（只改 props）能正常进原厂 recovery。
 
@@ -233,11 +233,10 @@
 
 ## 当前状态
 
-- 基础版已验证：显示、触摸、adb、MTP、系统↔recovery 往返。
-- `/data` 解密进行中：AIDL KeyMint 未注册；TEE 节点缺失是主要阻塞。
-- WiFi / 振动 / 在线更新 / 双系统：未开始。
+- 已验证：显示、触摸、adb root/shell、MTP（开机自动启动、双向传输）、`/data` 静默解密、WiFi（开机自动连接、凭据持久化）、侧键/电源键导航。
+- 未验证/未完成：安装（zip/分区镜像）、备份/恢复、双系统、在线更新。
 
-## 22. recovery 的 servicemanager 与 KeyMint 查找（进行中）
+## 22. recovery 的 servicemanager 与 KeyMint 查找（已解决，见 25）
 
 **现象**：解密界面报 `look up android.hardware.security.keymint.IKeyMintDevice/default: the directory answered no method this recovery knows`；而 TEE/KeyMint/Gatekeeper/hwservicemanager 均已运行（`vendor.soter.teei.km.init=finish`）。
 
@@ -271,7 +270,7 @@
 
 现在 USB 由 `zz-tb365-usb.rc` 在 `on boot` 启动 adbd、在 `sys.usb.ffs.ready=1 && tb365.usb.bound=0` 时一次性绑定 adb，Skyward 的 `usb::set/switch` 全为空操作，端口不再被改动；实测 `tb365.usb.bound=1`、`sys.usb.state=adb` 稳定。
 
-## 24. KeyMint AIDL 的最后互操作细节（进行中）
+## 24. KeyMint AIDL 的最后互操作细节（已解决，见 25）
 
 - KeyMint beanpod 是 **AIDL NDK 后端**（NEEDED `libbinder_ndk.so`，接口库 `-V2-ndk.so`），事务码已核对：`begin = 10`、`getHardwareInfo = 1`、`upgradeKey = 6`、`convertStorageKeyToEphemeral = 13`、`getKeyCharacteristics = 14`，与 Skyward 常量一致。
 - NDK 的 `AParcel_writeString` 反汇编确认为 `int32 UTF-16 单元数 + 单元 + NUL`，与 Skyward `string()` 相同；`AIBinder_transact` 的接口令牌布局仍与 Skyward 的裸事务存在差异，`begin` 仍返回 `EX_TRANSACTION_FAILED (-2147483647)`。
@@ -303,11 +302,10 @@
 
 ## 26. 最终状态与复现说明
 
-**已验证镜像**：`out/dec88.img`（vendor_boot，64 MiB）。开机后：
-- `zz-tb365-usb.rc` 启动 adbd 并一次性绑定 adb（`tb365.usb.bound=1`，`sys.usb.state=adb`），Skyward 的 `usb::set/switch` 为空操作，端口此后不再被改动；
+**已验证镜像**：`out/dec115.img`（vendor_boot，64 MiB）。开机后：
+- `zz-tb365-usb.rc` 启动 adbd 并一次性绑定 adb（`tb365.usb.bound=1`）；Skyward 的 `usb::set/switch` 负责后续 adb↔`mtp,adb` 切换，`auto_transfer` 自动启动文件传输；
 - `zz-tb365-crypto.rc` 在 `tb365.usb.bound=1` 时启动 `tb365_teei / tb365_hwsvc / tb365_keymint / tb365_gatekeeper`（全部 recovery 域、root，使用 recovery 自带的 linker/库）；
-- 无头探针（调试版）在开机 20 s 跑 `convertStorageKeyToEphemeral` 与 `begin/abort`，结果写 pstore，便于不点屏回归；
-- 用户输入 PIN 后 metadata+FBE 解封，`/data` 挂载为 dm-9（f2fs rw），文件管理可浏览。
+- 开机静默解密（`auto_decrypt`），metadata+FBE 解开后 `/data` 挂载为 dm-9（f2fs rw）；WiFi 自动连接并可从 persist 恢复网络。
 
 **复现要点**：
 1. 构建后必须把 `target/release/skyward-pack` 复制到 `tools/skyward-pack`（脚本曾遗漏，导致 `mtp.rc` 改动不进镜像，也是 USB 反复消失的间接原因）。
@@ -315,7 +313,7 @@
 3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
 4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
 
-**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；在线更新尚未做；本机无振动马达（硬件限制）。
+**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；安装（zip/分区镜像）、备份/恢复、双系统、在线更新尚未验证或未配置。
 
 ## 29. WiFi 上电与 supplicant（已解决）
 
@@ -383,8 +381,4 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 **验证镜像**：`out/dec104.img`。日志应出现：
 `skyward: run auto_decrypt true starting on Home`、`opening the data partition behind the pages`，随后 `mtp: the computer opened a session`。
 
-## 32. 振动：本机没有马达（已确认，功能删除）
 
-**结论**：TB365FC 硬件没有振动马达。`/sys/class/leds/vibrator`、`regulator_vibrator` 驱动、vibrator HAL 与工厂配置都是 MTK/联想通用模板：写 `brightness=255`/`activate=1` 能让 `mt6377_vibr` regulator 打开/关闭（内核日志有 `vibr_enable`/`vibr_disable`），但在原厂 Android 和 recovery 上都没有任何物理振动，用户也确认日常使用中从不震动。
-
-**处理**：已删除本机的 `[haptics]` 配置、LED 震动后端以及“普通点按振动”改动，恢复 Skyward 原行为。设置页在 Haptics 未打开时不再显示“振动”开关与力度滑条（`State.motor` 由 `Pages::open` 按 `haptics.is_some()` 设置；UI 单测默认有马达，故仍覆盖原布局）。FF 后端仍保留给其他有马达的机型。RMX3115（AW8697 手机）的震动配置不能类比到本平板。

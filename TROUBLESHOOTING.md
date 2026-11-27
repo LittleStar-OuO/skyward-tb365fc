@@ -387,4 +387,4 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 
 **结论**：TB365FC 硬件没有振动马达。`/sys/class/leds/vibrator`、`regulator_vibrator` 驱动、vibrator HAL 与工厂配置都是 MTK/联想通用模板：写 `brightness=255`/`activate=1` 能让 `mt6377_vibr` regulator 打开/关闭（内核日志有 `vibr_enable`/`vibr_disable`），但在原厂 Android 和 recovery 上都没有任何物理振动，用户也确认日常使用中从不震动。
 
-**处理**：已删除本机的 `[haptics]` 配置、LED 震动后端以及“普通点按振动”改动，恢复 Skyward 原行为（仅在没有马达时 Haptics 为 None）。FF 后端仍保留给其他有马达的机型。RMX3115（AW8697 手机）的震动配置不能类比到本平板。
+**处理**：已删除本机的 `[haptics]` 配置、LED 震动后端以及“普通点按振动”改动，恢复 Skyward 原行为。设置页在 Haptics 未打开时不再显示“振动”开关与力度滑条（`State.motor` 由 `Pages::open` 按 `haptics.is_some()` 设置；UI 单测默认有马达，故仍覆盖原布局）。FF 后端仍保留给其他有马达的机型。RMX3115（AW8697 手机）的震动配置不能类比到本平板。

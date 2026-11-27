@@ -1323,10 +1323,9 @@ impl<'a> Pages<'a> {
             | Work::SystemStopped => start,
         };
         let mut app = App::new(first, w, h, cfg.display.density as f32 / 160.0);
-        // A phone whose motor opened answers a tap on something with one; a
-        // phone whose motor did not, or the pages tried on their own, does
-        // not.
-        app.state.tap_haptics = haptics.is_some();
+        // A phone whose motor did not open offers neither its switch nor
+        // its strength on the settings page.
+        app.state.motor = haptics.is_some();
         app.set_screen_corners(cfg.display.corner_radius as f32);
         // The settings kept from the starts before are back before the first
         // frame, and before file transfer starts with its switch and the time

@@ -381,14 +381,19 @@ pub fn settings(cx: &Ctx) -> Frame {
     if let Some(r) = slider.below {
         out.push(Hit { rect: r, action: Action::Open(Screen::ScreenOff) });
     }
-    y = widgets::section(&mut c, t, f, slider.bottom, l.pick(texts::settings::VIBRATION));
-    let below = Row::new(l.pick(texts::settings::TOUCH_VIBRATION)).trail(Trail::Switch(s.vibrate));
-    let vibration = widgets::slider_card(&mut c, t, f, y, Caption::Vibrate, l.pick(texts::settings::VIBRATION_INTENSITY), s.vibration, Some(below));
-    out.push(Hit { rect: vibration.track, action: Action::Slider(Slider::Vibration) });
-    if let Some(r) = vibration.below {
-        out.push(Hit { rect: r, action: Action::Toggle(Switch::Vibrate) });
-    }
-    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(texts::settings::GENERAL));
+    let after_vibration = if s.motor {
+        y = widgets::section(&mut c, t, f, slider.bottom, l.pick(texts::settings::VIBRATION));
+        let below = Row::new(l.pick(texts::settings::TOUCH_VIBRATION)).trail(Trail::Switch(s.vibrate));
+        let vibration = widgets::slider_card(&mut c, t, f, y, Caption::Vibrate, l.pick(texts::settings::VIBRATION_INTENSITY), s.vibration, Some(below));
+        out.push(Hit { rect: vibration.track, action: Action::Slider(Slider::Vibration) });
+        if let Some(r) = vibration.below {
+            out.push(Hit { rect: r, action: Action::Toggle(Switch::Vibrate) });
+        }
+        vibration.bottom
+    } else {
+        slider.bottom
+    };
+    y = widgets::section(&mut c, t, f, after_vibration, l.pick(texts::settings::GENERAL));
     let general = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(texts::page::LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
         Row::new(l.pick(texts::page::TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(s.zone_name())),

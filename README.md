@@ -34,7 +34,7 @@
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
 | /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
 | WiFi | √ | 开机自动上电（wmt_loader/wmt_launcher/wlan_assistant + `wlan0`），连接成功后的网络保存在 persist，重启自动连回；扫描/连接/ DHCP 已验证 |
-| 振动 | × | 本机**没有振动马达**（硬件未配备）；DT/HAL/工厂配置是 MTK/联想通用模板，regulator 可开关但无物理反馈 |
+| 振动 | × | 本机**没有振动马达**（硬件未配备）；DT/HAL/工厂配置是 MTK/联想通用模板。设置页已隐藏振动开关与力度滑条 |
 | 在线更新 Skyward | × | 未配置发布仓库 |
 | 侧键/电源键导航 | 未测 | 触摸已可用 |
 

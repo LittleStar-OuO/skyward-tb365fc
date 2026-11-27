@@ -35,10 +35,10 @@ pub struct State {
     /// How strongly the motor taps, from 0 at the slider's left end to 1
     /// at its right.
     pub vibration: f32,
-    /// A tap on something answers with a tap of the motor. It is set as the
-    /// pages open where a motor was opened, and stays off where none was,
-    /// as in the tests of the pages themselves.
-    pub tap_haptics: bool,
+    /// Whether the phone has a motor, whose switch and strength the
+    /// settings page offers. It is set as the pages open, and left on where
+    /// the pages are tried on their own.
+    pub motor: bool,
     /// A computer connected over USB is offered internal storage.
     pub file_transfer: bool,
     pub reboot: usize,
@@ -218,7 +218,7 @@ impl Default for State {
             now: 0,
             vibrate: true,
             vibration: SLIDER_START,
-            tap_haptics: false,
+            motor: true,
             file_transfer: true,
             reboot: 0,
             wipe: [false; WIPES.len()],

@@ -674,4 +674,16 @@ mod tests {
         app.tick(15_000);
         assert!(!app.display_on());
     }
+
+    #[test]
+    fn a_phone_without_a_motor_offers_no_vibration_on_settings() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Settings, &f, &i);
+        app.state.motor = false;
+        let frame = app.frame(&f, &i);
+        assert!(
+            !frame.hits.iter().any(|h| matches!(h.action, Action::Slider(Slider::Vibration) | Action::Toggle(Switch::Vibrate))),
+            "neither the strength nor its switch shows"
+        );
+    }
 }

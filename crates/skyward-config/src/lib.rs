@@ -284,16 +284,8 @@ pub struct Haptics {
     #[serde(default)]
     pub click: Option<i16>,
     /// The file the driver says the motor's resonant frequency in, in
-    /// tenths of a hertz whatever its label. None where the motor is not
-    /// the kernel's force-feedback device, as on a phone whose motor is
-    /// an LED.
-    #[serde(default)]
-    pub resonance: Option<String>,
-    /// The LED the phone's regulator motor shows as, when it is not a
-    /// force-feedback input device: a click writes its duration to
-    /// `duration` and `1` to `activate`, with the `transient` trigger on.
-    #[serde(default)]
-    pub led: Option<String>,
+    /// tenths of a hertz whatever its label.
+    pub resonance: String,
     pub strength: Strength,
     /// Whether the strength goes into the samples made, each made that
     /// share of itself and played at the driver's full magnitude, on
@@ -701,16 +693,8 @@ impl DeviceConfig {
             ensure!(plain && !folder.is_empty(), "[backup] data_skipped: {folder} is not a path from the top of {DATA}");
         }
         if let Some(haptics) = &cfg.haptics {
-            ensure!(
-                haptics.resonance.is_some() || haptics.led.is_some(),
-                "[haptics] names neither a resonance file nor an LED to play through"
-            );
-            if let Some(file) = &haptics.resonance {
-                ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
-            }
-            if let Some(dir) = &haptics.led {
-                ensure!(Path::new(dir).is_absolute(), "[haptics] led: {dir} is not an absolute path");
-            }
+            let file = &haptics.resonance;
+            ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
             let Strength { lightest, strongest } = haptics.strength;
             ensure!(
                 0.0 < lightest && lightest < strongest && strongest <= 1.0,
@@ -824,7 +808,7 @@ mod tests {
     fn ishtar_clicks_with_a_waveform_its_driver_keeps() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
         let haptics = cfg.haptics.expect("the 13 Ultra has a motor");
-        assert_eq!((haptics.click, haptics.resonance.as_deref()), (Some(0), Some("/sys/class/qcom-haptics/lra_frequency_hz")));
+        assert_eq!((haptics.click, haptics.resonance.as_str()), (Some(0), "/sys/class/qcom-haptics/lra_frequency_hz"));
         assert_eq!(haptics.strength, Strength { lightest: 0.5, strongest: 1.0 });
         assert!(!haptics.scale_samples, "its strength is the magnitude its driver is given");
     }
@@ -833,7 +817,7 @@ mod tests {
     fn socrates_clicks_with_samples_made_as_strong_as_the_slider_says() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/socrates.toml")).unwrap();
         let haptics = cfg.haptics.expect("the K60 Pro has a motor");
-        assert_eq!((haptics.click, haptics.resonance.as_deref()), (None, Some("/sys/class/qcom-haptics/lra_frequency_hz")));
+        assert_eq!((haptics.click, haptics.resonance.as_str()), (None, "/sys/class/qcom-haptics/lra_frequency_hz"));
         assert_eq!(haptics.strength, Strength { lightest: 0.15, strongest: 1.0 });
         assert!(haptics.scale_samples, "its driver plays samples at two strengths alone");
     }
@@ -900,7 +884,7 @@ mod tests {
         assert_eq!(post_boot.args, ["/vendor/bin/init.kernel.post_boot.sh"]);
         assert_eq!(post_boot.libraries, ["/system/lib64", "/vendor/lib64"], "it loads the recovery's own libraries first");
         let haptics = cfg.haptics.expect("the 17 Ultra has a motor");
-        assert_eq!((haptics.click, haptics.resonance.as_deref()), (None, Some("/sys/class/qcom-haptics/lra_frequency_hz")), "its click is made");
+        assert_eq!((haptics.click, haptics.resonance.as_str()), (None, "/sys/class/qcom-haptics/lra_frequency_hz"), "its click is made");
         assert_eq!(haptics.strength, Strength { lightest: 0.25, strongest: 0.75 }, "past three quarters the motor rattles");
         assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
         assert!(cfg.backup.data_skipped.contains(&"vendor/goodix".to_string()));

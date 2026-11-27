@@ -34,7 +34,7 @@
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
 | /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
 | WiFi | √ | 开机自动上电（wmt_loader/wmt_launcher/wlan_assistant + `wlan0`），连接成功后的网络保存在 persist，重启自动连回；扫描/连接/ DHCP 已验证 |
-| 振动 | √ | MTK `regulator_vibrator` 无 FF 输入设备，改用 `/sys/class/leds/vibrator` 的 `transient` trigger（写 `duration` 后 `activate=1`）；普通点按、按键、息屏提示均有反馈 |
+| 振动 | × | 本机**没有振动马达**（硬件未配备）；DT/HAL/工厂配置是 MTK/联想通用模板，regulator 可开关但无物理反馈 |
 | 在线更新 Skyward | × | 未配置发布仓库 |
 | 侧键/电源键导航 | 未测 | 触摸已可用 |
 
@@ -57,7 +57,6 @@
 11. **WiFi 上电链**：MT6835 的 connac1x 由 `wmt_loader` → `wmt_launcher` → `wlan_assistant` 启动（不是 `conninfra_loader`）；`wmt_drv`/`connfem` 由 `[modules].load` 在开机时加载，`wlan_drv_gen4m_6835` 在 WLAN 拉起时加载，NVRAM 从只读挂载的 nvdata 读取。
 12. **WiFi VNDK 库**：supplicant 依赖的 `libnl.so`、`libssl.so`、`libcrypto.so`、`android.hardware.wifi.supplicant-V1-ndk.so` 在 recovery 未挂载的 VNDK v33 APEX 里，已提取进 ramdisk 的 `/system/lib64/vndk33/`；`android.hardware.wifi.supplicant.ISupplicant/default` 必须写进镜像的 framework VINTF（servicemanager 只在启动时读 VINTF）。
 13. **WiFi 凭据持久化**：连接成功（supplicant 已协商密钥）后写入 `/mnt/vendor/persist/skyward/wifi/`（0600）；`auto_join = true` 在开机时自动重连，`prewarm = false` 把校准放在后台 WLAN 线程里，不阻塞界面。密码为明文保存（仅 recovery root 可读），这是 recovery 环境下的取舍。
-14. **LED 震动后端**：本机马达是 `regulator_vibrator`，只暴露 `/sys/class/leds/vibrator`，没有 FF 输入设备。`[haptics].led` 指定该目录后，点击/息屏提示分别写 `duration`（点按 20–60 ms，按力度滑块；息屏提示 40 ms）再写 `activate=1`，由驱动的 `transient` trigger 自动停止；无需共振频率文件。另给 UI 加了普通点按反馈（只在马达成功打开时启用）。
 
 ## 构建
 

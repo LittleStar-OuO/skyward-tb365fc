@@ -315,7 +315,7 @@
 3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
 4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
 
-**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；在线更新尚未做。
+**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；在线更新尚未做；本机无振动马达（硬件限制）。
 
 ## 29. WiFi 上电与 supplicant（已解决）
 
@@ -383,16 +383,8 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 **验证镜像**：`out/dec104.img`。日志应出现：
 `skyward: run auto_decrypt true starting on Home`、`opening the data partition behind the pages`，随后 `mtp: the computer opened a session`。
 
-## 32. 震动：regulator_vibrator 的 LED transient trigger（已解决）
+## 32. 振动：本机没有马达（已确认，功能删除）
 
-**现象/原因**：本机马达驱动是 `regulator_vibrator`，只创建 `/sys/class/leds/vibrator`，**没有** FF 输入设备；Skyward 原实现从 `/dev/input` 找支持 `FF_PERIODIC` 的设备并读共振频率，因此打不开、震动完全不可用。原厂 HAL 字符串也显示两条路径：`/sys/class/timed_output/vibrator/enable` 与 `/sys/class/leds/vibrator`。
+**结论**：TB365FC 硬件没有振动马达。`/sys/class/leds/vibrator`、`regulator_vibrator` 驱动、vibrator HAL 与工厂配置都是 MTK/联想通用模板：写 `brightness=255`/`activate=1` 能让 `mt6377_vibr` regulator 打开/关闭（内核日志有 `vibr_enable`/`vibr_disable`），但在原厂 Android 和 recovery 上都没有任何物理振动，用户也确认日常使用中从不震动。
 
-**正确用法**（实测）：
-1. `echo transient > /sys/class/leds/vibrator/trigger` —— 之后才出现 `duration`、`state`、`activate` 属性。
-2. `echo <毫秒> > duration`。
-3. `echo 1 > activate` —— 驱动打开 regulator，到时自动关闭（dmesg：`vibr_enable` / `vibr_disable`）。
-   只写 `state=1` 不会启动；`activate=1` 才是单次脉冲。
-
-**Skyward 集成**：`[haptics]` 新增 `led = "/sys/class/leds/vibrator"`，`resonance` 变为可选。点击把力度滑块映射到 20–60 ms（regulator 马达起转慢，短脉冲几乎感觉不到），息屏提示固定 40 ms；不需要共振频率，也没有振幅控制（regulator 只有开/关）。另外 UI 原本只在返回手势/滑条/按键时震动，现在普通点按命中项也会发 `Effect::Haptic`（运行时 `tap_haptics` 仅在马达成功打开时为真，UI 单测默认关闭）。`haptic` CLI（用改名副本运行）可直接验证。
-
-**验证**：CLI 输出 `played the click ... 14 ms long` / `played the ticks ... 24 ms long`，内核日志出现对应的 `vibr_enable`/`vibr_disable`。
+**处理**：已删除本机的 `[haptics]` 配置、LED 震动后端以及“普通点按振动”改动，恢复 Skyward 原行为（仅在没有马达时 Haptics 为 None）。FF 后端仍保留给其他有马达的机型。RMX3115（AW8697 手机）的震动配置不能类比到本平板。

@@ -23,7 +23,7 @@
 | 显示 | √ | 1600×2560 @ 90Hz（DRM/KMS） |
 | 触摸 | √ | 10 点，方向正确 |
 | 中文界面 / 主题 | √ | 随系统语言 |
-| 设备信息卡片 | √ | 部分字段因 SELinux 限制降级显示 |
+| 设备信息卡片 | √ | 型号、SoC、RAM、屏幕、存储、系统版本、电池等信息正常显示 |
 | 重启到系统 / recovery | √ | `adb reboot` / `adb reboot recovery` 往返验证 |
 | 正常 Android 启动不受影响 | √ | 刷着本 recovery 的 vendor_boot 时系统可正常启动 |
 | 安装（zip / 分区镜像） | × | 尚未验证 |
@@ -115,7 +115,6 @@ fastboot flash vbmeta_a vbmeta_stock.img
 - **安装（zip / 分区镜像）尚未验证**：入口可用，尚未在真机跑完整刷写与校验。
 - **双系统切换尚未验证**：本机为 A/B，但未建立第二系统并验证切换。
 - **在线更新 Skyward 未配置**：没有发布仓库/更新源。
-- **设备信息卡片部分字段降级显示**：受本机 recovery SELinux 限制，少数字段读取失败时显示为空。
 - vendor_boot 的 vendor ramdisk 同时用于正常启动；已验证不影响系统启动，但请保留原厂镜像以便回滚。
 
 ## 目录

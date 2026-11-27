@@ -90,13 +90,13 @@
 
 ---
 
-## 9. recovery 内 `adb shell` 崩溃（已知限制）
+## 9. recovery 内 `adb shell` 崩溃（已解决）
 
 **现象**：`adb devices` 能看到 `recovery`，但 `adb shell` 触发 adbd 崩溃：`Could not set SELinux context for subprocess`。
 
 **原因**：本机 recovery 策略没有 shell 域/缺少上下文转换；`setexeccon` 失败使 adbd 中止。
 
-**现状**：MTP、Skyward 内置终端可用；`adb pull/push` 走 sync 服务不受影响。后续可研究补 SELinux 上下文或单次 `ro.secure=0` 的安全生效方式。
+**解决**：调试版 sepolicy 把 `adbd`/`su`/`shell` 置为 permissive，并放宽 `adb_root`，adbd 以 `su` 域直接提供 root shell（`adb shell id` → `uid=0(root) context=u:r:su:s0`）。
 
 ---
 
@@ -315,4 +315,32 @@
 3. HAL 全部使用 recovery 自带的 v33 `libbinder_ndk`/linker；v35 在 recovery 会挂起。
 4. 资源：`resources/tb365fc/` 存放 rc、wrapper 脚本、VINTF 清单与 prop 补丁文件。
 
-**已知限制**：MTP 暂关（先保 USB/adb 稳定）；recovery 的 SELinux 策略含 permissive 域（开发镜像）；`adb shell` 仍不可用（联想 recovery 策略缺 shell 域）；调试版含开机探针。
+**已知限制**：recovery 的 SELinux 策略含 permissive 域（开发镜像）；调试版含开机探针；WiFi/振动/在线更新尚未做。
+
+## 27. MTP 一传文件就断：MTU3 的 64K 端点请求上限（已解决）
+
+**现象**：MTP 枚举正常、能列目录；Windows 拖入或拖出文件时提示驱动崩溃/设备消失，一两秒后恢复，操作被取消。Skyward 日志里先是
+`mtp: 0x1016 given up: Operation not supported on transport endpoint (os error 95)`，
+随后 `mtp: ... Identifier removed (os error 43)` 导致 MTP 线程退出。
+
+**原因**：MT6835 使用 `mtu3` UDC。`mtu3_gadget_queue()` 对 `request->length > GPD_BUF_SIZE`（65532）的请求直接返回 `-EOPNOTSUPP`；而 Skyward 原实现按 1 MiB 分块，Windows 一发数据（SEND_OBJECT/SET_DEVICE_PROP_VALUE）就失败。
+第二个坑：FunctionFS 会把 OUT 读缓冲向上对齐到整包。`65532` 不是 512 的倍数，内核会按 65536 入队并超出 MTU3 上限，或在读回时丢掉多出的字节。
+
+**解决**：
+1. `skyward-mtp` 的 `CHUNK`/`FILE_CHUNK` 改为 **65024（127×512）**：既 ≤65532，又保持整包对齐。
+2. 合并上游 PR #47（`fix(mtp): keep the completions that end early...`）：保留传输期间提前完成的 completion、处理 suspend/resume、`ECONNRESET`。
+3. ep0 读写在事务被主机取消时返回 `EIDRM`，这是正常路径；现在映射为 `Control::Cancel`，不再把 MTP 线程打死。
+
+**验证**：Windows 写入 5 MiB、读出 6 MiB，设备侧/主机侧 MD5 均一致，MTP 线程保持运行（`sys.usb.state=mtp,adb`）。无人值守测试脚本：`tools/mtp-test.ps1`。
+
+## 28. 开机静默解密与静默 MTP（已实现）
+
+**需求**：开机不要直接显示解密页；文件传输也不要每次手动打开。
+
+**实现**：
+- 配置新增顶层 `auto_decrypt` / `auto_transfer`（`devices/tb365fc.toml`）。
+- `auto_decrypt`：`ui::run` 首屏固定 `Home`，`Pages::begin()` 在后台启动 `Decryptor::Job::Open`，同时把 `Data` 置为 `Opening`；解密完成自动 `offer_storage()`。KeyMint 未注册时主流程仍先等待（最多 60 s）。
+- `auto_transfer`：`Pages::open()` 强制本次启动打开文件传输并 `Transfer::start()`，随后 `begin()` 把端口切到 `mtp,adb`；开关仍可随时关闭。
+
+**验证镜像**：`out/dec104.img`。日志应出现：
+`skyward: run auto_decrypt true starting on Home`、`opening the data partition behind the pages`，随后 `mtp: the computer opened a session`。

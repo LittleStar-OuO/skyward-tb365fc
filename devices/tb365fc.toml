@@ -1,3 +1,5 @@
+auto_decrypt = true
+auto_transfer = true
 [device]
 codename = "tb365fc"
 brand = "Lenovo"

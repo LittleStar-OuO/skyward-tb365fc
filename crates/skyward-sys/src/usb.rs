@@ -1,11 +1,12 @@
-//! The functions the USB port offers. The recovery's own init binds adb
-//! once at boot; the recovery service leaves the port as it is, since
-//! asking init for another configuration is what leaves adb gone on some
-//! boots.
+//! The functions the USB port offers, which init sets up as `sys.usb.config`
+//! asks: adb while the recovery waits, with files over MTP beside it while
+//! file transfer is on.
 
-use anyhow::Result;
+use crate::{prop, set_prop, wait_prop};
+use anyhow::{ensure, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 static MTP: AtomicBool = AtomicBool::new(false);
 
@@ -18,17 +19,46 @@ pub fn resting() -> &'static str {
     }
 }
 
-/// Whether MTP goes beside adb while the port rests.
+/// Whether MTP goes beside adb while the port rests: from when its function
+/// has its descriptors until it goes.
 pub fn set_mtp(on: bool) {
     MTP.store(on, Ordering::Relaxed);
 }
 
-/// The port is left as the recovery's own init set it up.
-pub fn set(_config: &str, _timeout: Duration) -> Result<()> {
+/// Ask init for `config` and wait until it is in place. Going to "none"
+/// also waits for adbd to be gone, so its function is free.
+pub fn set(config: &str, timeout: Duration) -> Result<()> {
+    set_prop("sys.usb.config", config)?;
+    if let Err(e) = wait_prop("sys.usb.state", config, timeout) {
+        let said = ["sys.usb.state", "sys.usb.ffs.ready", "sys.usb.ffs.mtp.ready", "init.svc.adbd"]
+            .map(|name| format!("{name}={:?}", prop(name)))
+            .join(" ");
+        let _ = crate::kmsg(&format!("{config} was asked of the port, and after {} ms: {said}", timeout.as_millis()));
+        return Err(e);
+    }
+    if config == "none" {
+        let start = Instant::now();
+        while !matches!(prop("init.svc.adbd").as_deref(), None | Some("stopped")) {
+            ensure!(start.elapsed() < timeout, "adbd still runs {} ms after the port went to none", timeout.as_millis());
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
     Ok(())
 }
 
-/// Same: handing the port through "none" is what used to lose adb.
-pub fn switch(_config: &str, _timeout: Duration) -> Result<()> {
-    Ok(())
+/// Hand the port to `config`. File transfer comes and goes beside adb
+/// without stopping adbd: init's rules take the old function links off and
+/// put the new ones back as the port is rebound.
+pub fn switch(config: &str, timeout: Duration) -> Result<()> {
+    if matches!((prop("sys.usb.state").as_deref(), config), (Some("adb"), "mtp,adb" | "sideload") | (Some("mtp,adb" | "sideload"), "adb")) {
+        return set(config, timeout);
+    }
+    set("none", timeout)?;
+    match set(config, timeout) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = set("adb", timeout);
+            Err(e)
+        }
+    }
 }

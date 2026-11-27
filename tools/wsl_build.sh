@@ -6,9 +6,11 @@ export PATH=/home/builder/.cargo/bin:$PATH
 
 cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward
 RUSTFLAGS="-C target-feature=+crt-static" cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward-system-init --target-dir target/system-init
-cargo build --locked --release -p skyward-pack
+cargo build --locked --release -p skyward-pack --bins
 
 mkdir -p tools stock out
+cp target/release/skyward-pack tools/skyward-pack
+cp target/release/ramdisk-x tools/ramdisk-x
 cp target/aarch64-linux-android/release/skyward tools/
 cp target/system-init/aarch64-linux-android/release/system-init tools/
 cp /mnt/e/TB365FC_Recovery/stock/vendor_boot_stock.img stock/vendor_boot.img

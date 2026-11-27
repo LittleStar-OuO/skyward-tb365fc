@@ -1367,6 +1367,12 @@ impl<'a> Pages<'a> {
         let read_at = Instant::now();
         let fastboot = first == Screen::Fastboot;
         let port_at = Instant::now();
+        // File transfer serves from the start where the device asks for it,
+        // whatever the switch was left as at the last start; the switch
+        // still turns it off for the rest of this one.
+        if cfg.auto_transfer {
+            app.state.file_transfer = true;
+        }
         let mut transfer: Option<Transfer> = None;
         if app.state.file_transfer {
             match Transfer::start(cfg, &info, app.state.zone()) {
@@ -1577,6 +1583,28 @@ impl<'a> Pages<'a> {
         // /metadata to fastbootd until the recovery's pages come up.
         if let (Some(worker), false, false) = (self.systems_worker.as_mut(), self.switch_asked, self.fastboot) {
             worker.send(systems::Task::Resume);
+        }
+        // A phone whose device asks for the data partition to open as the
+        // recovery starts opens it behind the pages, so the first screen is
+        // the home page and nothing has to be tapped.
+        if cfg.auto_decrypt
+            && matches!(self.request.work, Work::Menu)
+            && !self.fastboot
+            && self.decryptor.is_none()
+            && !self.app.state.data.storage_open()
+        {
+            self.app.open_data_quietly();
+            match Decryptor::start(decrypt::Job::Open) {
+                Ok(d) => {
+                    self.decryptor = Some(d);
+                    skyward_sys::kmsg("opening the data partition behind the pages")?;
+                }
+                Err(e) => {
+                    let why = format!("{e:#}");
+                    skyward_sys::kmsg(&format!("the data partition is not opened in the background: {why}"))?;
+                    self.app.data_failed(why);
+                }
+            }
         }
         // The port came up with adb alone; at rest it offers file transfer
         // beside it.
@@ -2419,6 +2447,16 @@ impl Pages<'_> {
                 }
                 self.closed = opening.closed;
                 show_closed(&mut self.app, &self.closed)?;
+                // A PIN left in the recovery's own folder opens the user's
+                // own files without the page being touched.
+                if let Ok(code) = std::fs::read("/mnt/vendor/persist/skyward/pin") {
+                    if !code.is_empty()
+                        && let Some(user) = self.closed.iter().find(|c| c.why.is_some()).map(|c| c.user)
+                    {
+                        let job = decrypt::Job::Unlock { closed: self.closed.clone(), user, credential: code };
+                        self.decryptor = Some(Decryptor::start(job)?);
+                    }
+                }
                 follow_system_zone(&mut self.app, kept_time_zone()?.as_deref(), &self.info)?;
             }
             decrypt::Ended::Opened(Err(why)) => {
@@ -2639,13 +2677,17 @@ impl Pages<'_> {
             // The decrypt page shows meanwhile that the work is
             // under way, and takes nothing more until it is done.
             Effect::OpenData => {
-                ensure!(self.decryptor.is_none(), "the data partition is being opened already");
-                self.decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                // The page may open over a partition the device is already
+                // opening behind it.
+                if self.decryptor.is_none() {
+                    self.decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                }
             }
             Effect::Unlock { user, code } => {
-                ensure!(self.decryptor.is_none(), "the data partition is being opened already");
-                let job = decrypt::Job::Unlock { closed: self.closed.clone(), user, credential: code.into_bytes() };
-                self.decryptor = Some(Decryptor::start(job)?);
+                if self.decryptor.is_none() {
+                    let job = decrypt::Job::Unlock { closed: self.closed.clone(), user, credential: code.into_bytes() };
+                    self.decryptor = Some(Decryptor::start(job)?);
+                }
             }
             Effect::ReadDir(folder) => list(&mut self.app, folder)?,
             Effect::ReadPlace(place, folder) => list_place(&mut self.app, place, folder)?,

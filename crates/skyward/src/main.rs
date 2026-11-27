@@ -626,7 +626,10 @@ fn main() -> Result<()> {
         #[cfg(target_os = "android")]
         Cmd::Ui { config, font, mono, unlock, dump } => {
             let cfg = DeviceConfig::load(&config)?;
+            // `unlock` asks for the page; auto-decrypt opens the partition
+            // behind the pages instead of showing them.
             let start = if unlock { skyward_ui::app::Screen::Decrypt } else { skyward_ui::app::Screen::Home };
+            let _ = skyward_sys::kmsg(&format!("skyward: auto-decrypt {} starting on {:?}", cfg.auto_decrypt, start));
             // The programs the recovery service started for the phone's
             // keys are read from the partitions again, as it read them;
             // where they do not show, it started none.
@@ -1054,7 +1057,27 @@ fn recovery() -> Result<()> {
                 programs.extend(prepare(&cfg, booted_slot()?)?);
             }
             let root = Path::new("/");
-            ui::run(&cfg, &programs, &root.join(ramdisk::FONT), &root.join(ramdisk::MONO), request, Screen::Home, None)
+            if cfg.auto_decrypt {
+                // The key programs are started by the recovery's own init a
+                // moment after it binds the port; opening the partition
+                // before they show would only fail.
+                for _ in 0..240 {
+                    let shown = match skyward_binder::driver::Binder::open() {
+                        Ok(b) => matches!(
+                            skyward_binder::service::find(&b, skyward_crypto::keymint::SERVICE),
+                            Ok(Some(_))
+                        ),
+                        Err(_) => false,
+                    };
+                    if shown {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+            }
+            let start = Screen::Home;
+            let _ = skyward_sys::kmsg(&format!("skyward: run auto_decrypt {} starting on {:?}", cfg.auto_decrypt, start));
+            ui::run(&cfg, &programs, &root.join(ramdisk::FONT), &root.join(ramdisk::MONO), request, start, None)
         }
         #[cfg(not(target_os = "android"))]
         {

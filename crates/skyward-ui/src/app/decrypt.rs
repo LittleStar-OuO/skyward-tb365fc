@@ -92,6 +92,14 @@ impl App {
         vec![Effect::OpenData]
     }
 
+    /// Open the data partition without showing the decrypt page: the pages
+    /// start on whichever one they were asked for while it opens behind
+    /// them.
+    pub fn open_data_quietly(&mut self) {
+        self.state.data = Data::Opening;
+        self.refresh();
+    }
+
     /// Send what was entered at the screen lock of the user whose own
     /// files wait. It is taken as it is sent, so the dots clear while it is
     /// checked, and nothing more is entered until it has been.

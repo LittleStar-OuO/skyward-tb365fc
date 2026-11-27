@@ -87,6 +87,14 @@ pub struct DeviceConfig {
     /// whose server the recovery knows.
     #[serde(default)]
     pub update: Option<Update>,
+    /// Open the data partition as the recovery starts, instead of waiting
+    /// for the decrypt page to be opened.
+    #[serde(default)]
+    pub auto_decrypt: bool,
+    /// Serve file transfer as the recovery starts, instead of waiting for
+    /// its switch to be turned on.
+    #[serde(default)]
+    pub auto_transfer: bool,
     /// The stock build the recovery is made on.
     #[serde(default)]
     pub stock: Option<Stock>,

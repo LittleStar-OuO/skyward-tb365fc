@@ -29,10 +29,10 @@
 | 安装（zip / 分区镜像） | × | 尚未验证 |
 | 备份 / 恢复 | × | 尚未验证 |
 | 双系统 | × | 尚未验证 |
-| MTP（连接电脑） | × | 暂关：为保证 USB/adb 稳定，Skyward 不再切换端口，只用 adb；后续按已定位的“重复绑定”根因安全恢复 |
-| recovery 内 `adb shell` | × | adbd 创建 shell 子进程失败（联想 recovery SELinux 缺 shell 域） |
-| recovery 内 adb root | × | 本机 init 拒绝追加 `ro.secure` 等属性（见下），配置 `adb_root = false` |
-| /data 解密（FBE） | √ | Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper；metadata 与 FBE 均解开，/data 挂载为 dm-9 (f2fs rw)，文件管理可浏览 |
+| MTP（连接电脑） | √ | 开机自动后台启动（`auto_transfer`），Windows 可直接拖入/拖出；双向大文件按 MD5 校验一致。MTU3 单请求上限 65532 字节，MTP 块取 512 对齐的 65024 字节 |
+| recovery 内 `adb shell` | √ | adbd 以 `su` 域运行，root shell 可用 |
+| recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
+| /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
 | WiFi | × | 第二阶段：MTK connsys（wlan_assistant/conninfra_loader） |
 | 振动 | × | 未配置（MTK regulator-vibrator 无共振频率节点） |
 | 在线更新 Skyward | × | 未配置发布仓库 |
@@ -51,8 +51,9 @@
 5. **`/sys/power/mem_sleep` 写入容错**：被拒时休眠线程按“被拒绝”处理，不退出。
 6. **属性追加策略**：原厂 `prop.default` 已两次定义 `ro.secure/ro.adb.secure/ro.debuggable`，本机 init 拒绝再次定义；新增配置项 `device.adb_root`（默认 true），本机设为 `false`，保留原厂值。
 7. **新设备配置** `devices/tb365fc.toml`：显示 1600×2560/320dpi、90Hz 不强制、`modules.sources=["vendor_boot"]`、挂载 `persist`、MTK EFS 备份项等。
-8. **MTP 绑定修复**：切到 `mtp,adb` 时先解绑 UDC 并清掉 configfs 里 adb 占用的 `f1`，再重新绑定双功能；返回 adb 时同样清理并重新绑定。xaga fork 原实现跳过 `none`，导致 MTP symlink 冲突而只有 ADB。
-9. **调试/打包工具** `tools/` 与 `crates/skyward-pack/src/bin/ramdisk-x.rs`：用于检查/修改 vendor_boot ramdisk（非打包必需）。
+8. **MTP 绑定修复**：切到 `mtp,adb` 时先解绑 UDC 并清掉 configfs 里 adb 占用的 `f1`，再重新绑定双功能；返回 adb 时同样清理并重新绑定。xaga fork 原实现跳过 `none`，导致 MTP symlink 冲突而只有 ADB。另删除了重复的 adb 绑定 action（曾造成 gadget 反复重绑、USB 消失），并由 `auto_transfer` 在开机后自动启动。
+9. **MTU3 传输块上限**：MediaTek MTU3 对超过 65532 字节的端点请求返回 `-EOPNOTSUPP`，而 FunctionFS 会把读缓冲向上对齐到整包，因此 MTP 块大小取 65024（127×512）。否则 Windows 一开始传输文件就会因请求失败而重置设备。
+10. **调试/打包工具** `tools/` 与 `crates/skyward-pack/src/bin/ramdisk-x.rs`：用于检查/修改 vendor_boot ramdisk（非打包必需）。`tools/mtp-test.ps1` 可在 Windows 上无人值守地测 MTP 写入/读出。
 
 ## 构建
 

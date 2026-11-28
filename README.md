@@ -1,6 +1,6 @@
 # Skyward for Lenovo Xiaoxin Pad 12.1 2025 (TB365FC)
 
-[简体中文](README.md) | [English](README.en.md)
+[简体中文](https://github.com/LittleStar-OuO/skyward-tb365fc/blob/main/README.md) | [English](https://github.com/LittleStar-OuO/skyward-tb365fc/blob/main/README.en.md)
 
 ## 目录
 
@@ -547,6 +547,6 @@ mv /tmp/pstore-link /dev/block/by-name/pstore
 
 - [kirklin/skyward](https://github.com/kirklin/skyward)：Skyward 本体
 - [BkaNeko/xaga-skyward](https://github.com/BkaNeko/xaga-skyward)：MTK / vendor_boot / 竖屏 / 驱动适配参考
-- [酷安@黑橘火龙果的移植经验](https://www.coolapk.com/feed/75132513?s=ODQxYjkxOWQxZmQwMzhnNmIwOWUyYmF6a1591)：realme X7 Pro 至尊版与 Skyward 上游 PR #83（黑屏排查思路）
+- [酷安@黑橘火龙果的移植经验](https://www.coolapk.com/feed/75132513)：realme X7 Pro 至尊版与 Skyward 上游 PR #83（黑屏排查思路）
 
 本仓库为非官方移植项目，刷机有风险，请自行备份并确认机型与固件匹配。

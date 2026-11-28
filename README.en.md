@@ -1,6 +1,6 @@
 # Skyward for Lenovo Xiaoxin Pad 12.1 2025 (TB365FC)
 
-[简体中文](README.md) | [English](README.en.md)
+[简体中文](https://github.com/LittleStar-OuO/skyward-tb365fc/blob/main/README.md) | [English](https://github.com/LittleStar-OuO/skyward-tb365fc/blob/main/README.en.md)
 
 ## Directory
 
@@ -191,6 +191,6 @@ The Chinese README keeps the full chronological log of every blocker, symptom, c
 
 - [kirklin/skyward](https://github.com/kirklin/skyward): Skyward itself
 - [BkaNeko/xaga-skyward](https://github.com/BkaNeko/xaga-skyward): MTK, vendor_boot, portrait and driver adaptation reference
-- [Coolapk @黑橘火龙果's porting notes](https://www.coolapk.com/feed/75132513?s=ODQxYjkxOWQxZmQwMzhnNmIwOWUyYmF6a1591): realme X7 Pro Ultra and Skyward upstream PR #83 (black-screen debugging)
+- [Coolapk @黑橘火龙果's porting notes](https://www.coolapk.com/feed/75132513): realme X7 Pro Ultra and Skyward upstream PR #83 (black-screen debugging)
 
 This repository is an unofficial port. Flashing is at your own risk; back up first and verify the model and firmware match.

@@ -16,14 +16,29 @@ README.en.md             this file
 
 ## Flashing
 
-Prerequisites: the bootloader is unlocked; only **slot a** is used (the factory package never wrote slot b).
+Prerequisites: the bootloader is unlocked; only **slot a** is used (the factory package never wrote slot b). **Do not flash the Release zip directly**: unzip it first. The `.img` inside is a complete vendor_boot partition image (64 MiB, ending in an AVB footer) and can be flashed with fastboot.
+
+### From a GitHub Release (recommended)
+
+1. Download the latest release, e.g. `skyward-v0.5.0-tb365fc-....zip`;
+2. Unzip it to get one `.img`; in the 0.5.0 package this is `dec122.img` (you may rename it to `skyward-tb365fc.img`);
+3. Check that it is exactly **67,108,864 bytes** and ends in `AVBf`;
+4. Flash it:
 
 ```sh
 adb reboot bootloader
-fastboot --disable-verification flash vbmeta_a vbmeta.img
-fastboot flash vendor_boot_a skyward-tb365fc.img
+fastboot devices
+fastboot --disable-verification flash vbmeta_a vbmeta_stock.img
+fastboot flash vendor_boot_a dec122.img
 fastboot reboot recovery
 ```
+
+- `vbmeta_stock.img` comes from the stock firmware package. Use it the first time (or to restore verification) to disable vendor_boot verification. If this page was already followed and verification is still off, flashing `vendor_boot_a` alone is enough.
+- Do not flash the Release zip, and do not write the image to slot b.
+
+### From a source build
+
+The build output `out/skyward-tb365fc.img` is flashed the same way; replace `dec122.img` above with it, or with whatever `tools/pack_tb365fc.sh` produced.
 
 Enter recovery with `adb reboot recovery`, or `fastboot reboot recovery`.
 

@@ -16,16 +16,31 @@ README.en.md             English README
 
 ## 刷入方法
 
-前置：bootloader 已解锁；仅操作**槽 a**（出厂包未写入槽 b）。
+前置：bootloader 已解锁；只操作**槽 a**（出厂包未写入槽 b）。**Release 里的 zip 不能直接刷**，先解压；里面的镜像本身就是完整的 vendor_boot 分区镜像（64 MiB，带 AVB footer），可以用 fastboot 线刷。
+
+### 从 GitHub Release 刷入（推荐）
+
+1. 下载最新 Release，例如 `skyward-v0.5.0-tb365fc-....zip`；
+2. 解压得到一个 `.img`：0.5.0 的包里是 `dec122.img`，可改名为 `skyward-tb365fc.img`；
+3. 确认文件大小为 **67,108,864 字节**，末尾是 `AVBf`；
+4. 刷入：
 
 ```sh
 adb reboot bootloader
-fastboot --disable-verification flash vbmeta_a vbmeta.img
-fastboot flash vendor_boot_a skyward-tb365fc.img
+fastboot devices
+fastboot --disable-verification flash vbmeta_a vbmeta_stock.img
+fastboot flash vendor_boot_a dec122.img
 fastboot reboot recovery
 ```
 
-进入方式：`adb reboot recovery`（系统内），或 fastboot 的 `fastboot reboot recovery`。
+- `vbmeta_stock.img` 取自原厂刷机包；第一次安装（或恢复校验）时用它关闭 vendor_boot 校验。之前已经按本页刷过、校验仍关闭时，只刷 `vendor_boot_a` 即可。
+- 不要刷 Release 的 zip，也不要把镜像写到槽 b。
+
+### 从源码构建的镜像
+
+构建产物 `out/skyward-tb365fc.img` 的刷入方式相同，只需把上面的 `dec122.img` 换成它；若用 `tools/pack_tb365fc.sh` 生成，文件名以实际输出为准。
+
+进入 recovery：`adb reboot recovery`（系统内），或 fastboot 的 `fastboot reboot recovery`。
 
 回滚：
 

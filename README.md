@@ -69,7 +69,7 @@ fastboot flash vbmeta_a vbmeta_stock.img
 | recovery 内 adb root | √ | debug policy 下 adbd/su/shell 为 permissive，`adb shell id` 为 root |
 | /data 解密（FBE） | √ | 开机后台静默解密（`auto_decrypt`），首屏保持主页；Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper，metadata 与 FBE 解开后 /data 挂载为 dm-9 (f2fs rw) |
 | WiFi | √ | 开机自动上电（wmt_loader/wmt_launcher/wlan_assistant + `wlan0`），连接成功后的网络保存在 persist，重启自动连回；扫描/连接/ DHCP 已验证 |
-| 在线更新 Skyward | √  | 正常可用 |
+| 在线更新 Skyward | √ | 正常可用 |
 | 侧键/电源键导航 | √ | 音量键/电源键导航已验证可用 |
 
 图例：√ 已验证可用；× 未完成/不可用。
@@ -128,7 +128,6 @@ target/release/skyward-pack recovery \
 
 - **安装（zip / 分区镜像）尚未验证**：入口可用，尚未在真机跑完整刷写与校验。
 - **双系统切换尚未验证**：本机为 A/B，但未建立第二系统并验证切换。
-- **在线更新暂不可用**：GitHub Release 已清空，更新页会提示查不到版本；重新发布后恢复。
 - vendor_boot 的 vendor ramdisk 同时用于正常启动；已验证不影响系统启动，但请保留原厂镜像以便回滚。
 
 ## 排查记录（Troubleshooting）

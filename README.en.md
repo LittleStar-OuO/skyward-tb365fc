@@ -69,7 +69,7 @@ SP Flash Tool with the full stock package (Download Only, never Format All) is t
 | adb root in recovery | √ | adbd/su/shell are permissive under the debug policy; `adb shell id` is root |
 | /data decryption (FBE) | √ | silent background decryption (`auto_decrypt`); Beanpod TEE + KeyMint 2.0 (AIDL) + HIDL gatekeeper; /data mounts as dm-9 (f2fs rw) |
 | WiFi | √ | chip is powered at boot (wmt_loader/wmt_launcher/wlan_assistant, `wlan0`); the joined network is kept on persist and rejoined after a reboot |
-| Online Skyward update | × | release source configured, but the GitHub releases have been cleared; available again after 0.5.0 is published |
+| Online Skyward update | √ | working |
 | Side / power key navigation | √ | volume and power keys verified |
 
 Legend: √ verified; × not done or not available.
@@ -124,7 +124,6 @@ target/release/skyward-pack recovery \
 
 - **Install (zip / partition image) is not verified**; the entry points exist but no full flash-and-check run has been done.
 - **Dual-boot switching is not verified**; the device is A/B but no second system has been installed.
-- **Online update is unavailable for now**: the GitHub releases were cleared, so the update page finds no version; it returns once a new release is published.
 - The vendor_boot vendor ramdisk is shared with normal boot. It has been verified not to break the system, but keep the stock images for rollback.
 
 ## Troubleshooting notes
